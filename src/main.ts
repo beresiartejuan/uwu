@@ -1,15 +1,18 @@
 import lexer from "./lexer";
 import { Parser } from "./parser";
+import { readFile } from "fs";
 
-lexer.reset(`
-let productos: list<string> = ["Hola", "fakwenf"];
-let persona: dict<string, string> = {
-    "1": "Juan",
-    "2": "Alberto"
-}
-`);
+readFile("./src/example.uwu", (err, data) => {
 
-const tokens = Array.from(lexer);
+    if (err) {
+        console.error(err);
+        process.exit();
+    }
 
-const parser = new Parser(tokens);
-parser.parser();
+    lexer.reset(data.toString("utf8"));
+
+    const tokens = Array.from(lexer);
+
+    const parser = new Parser(tokens);
+    parser.parser();
+});

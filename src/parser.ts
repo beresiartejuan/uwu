@@ -50,10 +50,12 @@ export class Parser {
         const name_token = this.tokens[this.cursors.get()];
 
         if (name_token.type !== "identifier") {
-            throw new Error(`Internal error: ${token_type.type} not must be a identifier`);
+            throw new Error(`Internal error: ${name_token.type} not must be a identifier. Value: ${name_token.value}`);
         }
 
         this.stack.naming(name_token.value);
+
+        this.cursors.delete();
 
     }
 

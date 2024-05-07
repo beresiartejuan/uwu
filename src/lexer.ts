@@ -4,13 +4,7 @@ const lexer = moo.compile({
     // keyword: ["let", "class", "function"],
     definition: { match: /(?:function|const|let|class)/ },
     type: { match: /(?:string|number|dict|list|object|null|boolean)/ },
-    stucture: {
-        match: /[a-z]+/,
-        type: moo.keywords({
-            'IF': 'if',
-            'ELSE': 'else'
-        })
-    },
+    stucture: { match: /(?:if|else)/ },
     WS: { match: /[ \t]+/, lineBreaks: true },// Espacios en blanco
     newline: { match: /\r?\n/, lineBreaks: true }, // Nuevas lineas
     comment: /\/\/.*?$/, // Comentarios

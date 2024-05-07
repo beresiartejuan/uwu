@@ -35,10 +35,12 @@ export default class Stack {
     }
 
     define(is_mutable: boolean) {
+        console.log("Se esta definiendo una variable");
         this.statament.is_mutable = is_mutable;
     }
 
     naming(name: string) {
+        console.log("Variable con nombre ", name);
         this.statament.name = name;
     }
 
