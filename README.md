@@ -36,7 +36,7 @@ npm run build
 Para ejecutar un script en Uwu, usa el siguiente comando en la terminal:
 
 ```bash
-npm run start
+npm start
 ```
 
 Aquí tienes un ejemplo simple de cómo se ve un script en Uwu:
