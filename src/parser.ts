@@ -1,6 +1,7 @@
 import type { Token } from "moo";
 import Stack from "./stack";
 import Cursor from "./cursor";
+import { InternalError } from "./InternalError";
 
 export const enum State {
     DEFINITION,
@@ -17,11 +18,13 @@ export class Parser {
     sub_tokens: Token[] = [];
     stack: Stack = Stack.getInstance();
     states: State[] = [];
+    code: string;
 
-    constructor(tokens: Token[]) {
+    constructor(tokens: Token[], code: string) {
         this.tokens = tokens;
         this.cursors = new Cursor(0);
         this.token = this.tokens[this.cursors.getRoot()];
+        this.code = code;
     }
 
     ignoreWS() {
@@ -36,13 +39,17 @@ export class Parser {
 
         this.cursors.create();
 
+        this.states.push(State.DEFINITION);
+
         const token_type = this.tokens[this.cursors.get()];
 
         if (token_type.type !== "definition") {
-            throw new Error(`Internal error: ${token_type.type} not must be a definition token`);
+            throw new InternalError(`Unexpected token '${token_type.value}'`, token_type.line, token_type.col, this.code);
         }
 
         this.stack.define(token_type.value === "let");
+
+        this.states.push(State.NAMING);
 
         this.cursors.next();
         this.ignoreWS();
@@ -50,10 +57,15 @@ export class Parser {
         const name_token = this.tokens[this.cursors.get()];
 
         if (name_token.type !== "identifier") {
-            throw new Error(`Internal error: ${name_token.type} not must be a identifier. Value: ${name_token.value}`);
+            throw new InternalError(`Unexpected token '${name_token.value}'`, name_token.line, name_token.col, this.code);
         }
 
         this.stack.naming(name_token.value);
+
+        this.cursors.next();
+        this.ignoreWS();
+
+        //const assignment = this.tokens[this.cursors.get()];
 
         this.cursors.delete();
 
@@ -69,6 +81,12 @@ export class Parser {
 
                 case "definition": {
                     this.stackeable();
+                    break;
+                }
+
+                case "type": {
+                    console.log(this.token.value);
+                    break;
                 }
 
                 default: {

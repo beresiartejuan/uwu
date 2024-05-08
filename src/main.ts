@@ -1,3 +1,4 @@
+import { InternalError } from "./InternalError";
 import lexer from "./lexer";
 import { Parser } from "./parser";
 import { readFile } from "fs";
@@ -9,10 +10,21 @@ readFile("./src/example.uwu", (err, data) => {
         process.exit();
     }
 
-    lexer.reset(data.toString("utf8"));
+    let code = data.toString("utf8")
+
+    lexer.reset(code);
 
     const tokens = Array.from(lexer);
+    const parser = new Parser(tokens, code);
 
-    const parser = new Parser(tokens);
-    parser.parser();
+    try {
+        parser.parser();
+    } catch (error) {
+        if (error instanceof InternalError) {
+            console.error(error.toString());
+        } else {
+            console.error(error);
+        }
+    }
+
 });

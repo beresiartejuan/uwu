@@ -1,5 +1,5 @@
-let productos: list<string> = ["Hola", "fakwenf"];
-let persona: dict<string, string> = {
+let listaa: list<string> = ["Hola", "fakwenf"];
+let diccionario: dict<string, string> = {
     "1": "Juan",
     "2": "Alberto"
 }
