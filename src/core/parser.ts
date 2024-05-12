@@ -5,7 +5,7 @@ import lexer from "./lexer";
 
 import handler from "../errors/handler";
 
-import { uwu, owo } from "./rules";
+import { uwu } from "./rules";
 
 export const enum State {
     DEFINITION,
@@ -23,7 +23,7 @@ export class Parser {
     cursors: Cursor;
     token?: Token;
     sub_tokens: Token[] = [];
-    stack: Stack = Stack.getInstance();
+    stack: Stack = new Stack();
     states: State[] = [];
     code?: string;
 
@@ -66,7 +66,7 @@ export class Parser {
             this.error(this.token!, this.code!).unexpected_token();
         }
 
-        this.stack.define(token_type.value === "let");
+        //this.stack.define(token_type.value === "let");
 
         this.states.push(State.NAMING);
 
@@ -79,7 +79,7 @@ export class Parser {
             //throw new InternalError(`Unexpected token '${name_token.value}'`, name_token.line, name_token.col, this.code);
         }
 
-        this.stack.naming(name_token.value);
+        //this.stack.naming(name_token.value);
 
         this.cursors.next();
         this.ignoreWS();

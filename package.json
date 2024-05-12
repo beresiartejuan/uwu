@@ -16,10 +16,12 @@
     "@swc/cli": "^0.3.12",
     "@swc/core": "^1.5.3",
     "@types/moo": "^0.5.9",
+    "@types/uuid": "^9.0.8",
     "typescript": "^5.4.5"
   },
   "dependencies": {
     "moo": "^0.5.2",
-    "prompt-async": "^0.9.9"
+    "prompt-async": "^0.9.9",
+    "uuid": "^9.0.1"
   }
 }

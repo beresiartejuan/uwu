@@ -1,76 +1,54 @@
-type DataType = "number" | "string" | "boolean" | "object" | "null" | "dict" | "list" | "function";
+import { v4 as uuidv4 } from 'uuid';
+
+type primitiveType = 'string' | 'number' | 'boolean' | 'null';
 
 interface StackItem {
+    name: string;
     value: any;
-    constant: boolean;
-    dataType: DataType;
-}
-
-interface Statament {
-    is_mutable?: boolean,
-    name?: string,
-    value?: any,
-    dataType?: DataType
+    primitiveType: primitiveType;
+    mutable: boolean;
 }
 
 export default class Stack {
-    private static instance: Stack | null = null;
+    private items: Map<string, StackItem>;
 
-    private statament: Statament = {
-        is_mutable: undefined,
-        name: undefined,
-        value: undefined,
-        dataType: undefined
-    };
+    constructor() {
+        this.items = new Map();
+    }
 
-    private items: { [key: string]: StackItem } = {};
+    push(name: string, value: any, primitiveType: primitiveType, mutable: boolean) {
+        const id = uuidv4();
+        this.items.set(id, { name, value, primitiveType, mutable });
+        return id;
+    }
 
-    private constructor() { }
+    get(uuid: string) {
+        return this.items.get(uuid);
+    }
 
-    static getInstance(): Stack {
-        if (!Stack.instance) {
-            Stack.instance = new Stack();
+    findByName(name: string) {
+        for (const [uuid, item] of this.items) {
+            if (item.name === name) {
+                return { uuid, item };
+            }
         }
-        return Stack.instance;
+        return null;
     }
 
-    define(is_mutable: boolean) {
-        this.statament.is_mutable = is_mutable;
+    update(uuid: string, newValue: any) {
+        const item = this.items.get(uuid);
+        if (item) {
+            if (item.mutable) {
+                item.value = newValue;
+                return true;
+            } else {
+                return false;
+            }
+        }
+        return false;
     }
 
-    naming(name: string) {
-        this.statament.name = name;
-    }
-
-    push(key: string, value: any, constant: boolean, dataType: DataType) {
-        this.items[key] = { value, constant, dataType };
-    }
-
-    get(key: string): any {
-        return this.items[key]?.value;
-    }
-
-    isConstant(key: string): boolean {
-        return !!this.items[key]?.constant;
-    }
-
-    getDataType(key: string): DataType | undefined {
-        return this.items[key]?.dataType;
-    }
-
-    contains(key: string): boolean {
-        return key in this.items;
-    }
-
-    pop(key: string): void {
-        delete this.items[key];
-    }
-
-    getAll(): { [key: string]: StackItem } {
-        return { ...this.items };
-    }
-
-    clear(): void {
-        this.items = {};
+    pop(uuid: string) {
+        return this.items.delete(uuid);
     }
 }
