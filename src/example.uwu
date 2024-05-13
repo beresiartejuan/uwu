@@ -1,5 +1,3 @@
-let listaa: list<string> = ["Hola", "fakwenf"];
-let diccionario: dict<string, string> = {
-    "1": "Juan",
-    "2": "Alberto"
-}
+// Definición de valores primitivos ;p
+let nombre: string = "Juancito";
+let edad: number = 21;

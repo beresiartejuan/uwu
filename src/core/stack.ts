@@ -3,7 +3,6 @@ import { v4 as uuidv4 } from 'uuid';
 type primitiveType = 'string' | 'number' | 'boolean' | 'null';
 
 interface StackItem {
-    name: string;
     value: any;
     primitiveType: primitiveType;
     mutable: boolean;
@@ -11,28 +10,39 @@ interface StackItem {
 
 export default class Stack {
     private items: Map<string, StackItem>;
+    private cursors: Map<string, string>;
 
     constructor() {
         this.items = new Map();
+        this.cursors = new Map();
     }
 
     push(name: string, value: any, primitiveType: primitiveType, mutable: boolean) {
         const id = uuidv4();
-        this.items.set(id, { name, value, primitiveType, mutable });
+        this.items.set(id, { value, primitiveType, mutable });
+        this.cursors.set(name, id);
         return id;
+    }
+
+    copy(uuid: string) {
+
+        const id = uuidv4();
+        const element = this.items.get(uuid);
+
+        if (element) {
+            this.items.set(id, element);
+            return id;
+        }
+
+        return null;
     }
 
     get(uuid: string) {
         return this.items.get(uuid);
     }
 
-    findByName(name: string) {
-        for (const [uuid, item] of this.items) {
-            if (item.name === name) {
-                return { uuid, item };
-            }
-        }
-        return null;
+    getCursor(name: string) {
+        return this.cursors.get(name);
     }
 
     update(uuid: string, newValue: any) {

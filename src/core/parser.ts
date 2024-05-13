@@ -24,7 +24,6 @@ export class Parser {
     token?: Token;
     sub_tokens: Token[] = [];
     stack: Stack = new Stack();
-    states: State[] = [];
     code?: string;
 
     constructor() {
@@ -50,41 +49,56 @@ export class Parser {
 
     evaluate() { }
 
-    /**
-     * Esta función se activa cuando el codigo detecta que algo
-     * se debe guardar en memoria, como una función, clase, variables, ect...
-     */
     stackeable() {
 
         this.cursors.create();
 
-        this.states.push(State.DEFINITION);
+        const definition_token = this.tokens[this.cursors.get()];
 
-        const token_type = this.tokens[this.cursors.get()];
-
-        if (token_type.type !== uwu.definition) {
-            this.error(this.token!, this.code!).unexpected_token();
+        if (definition_token.type !== uwu.definition) {
+            this.error(definition_token, this.code!).unexpected_token();
         }
-
-        //this.stack.define(token_type.value === "let");
-
-        this.states.push(State.NAMING);
 
         this.cursors.next();
         this.ignoreWS();
 
         const name_token = this.tokens[this.cursors.get()];
 
-        if (name_token.type !== "identifier") {
-            //throw new InternalError(`Unexpected token '${name_token.value}'`, name_token.line, name_token.col, this.code);
+        if (name_token.type !== uwu.identifier) {
+            this.error(name_token, this.code!).invalid_name(name_token.value);
         }
-
-        //this.stack.naming(name_token.value);
 
         this.cursors.next();
         this.ignoreWS();
 
-        //const assignment = this.tokens[this.cursors.get()];
+        const colon_token = this.tokens[this.cursors.get()];
+
+        if (colon_token.type !== uwu.colon) {
+            this.error(colon_token, this.code!).unexpected_token();
+        }
+
+        this.cursors.next();
+        this.ignoreWS();
+
+        const type_token = this.tokens[this.cursors.get()];
+
+        if (type_token.type !== uwu.type) {
+            this.error(type_token, this.code!).type_expected();
+        }
+
+        this.cursors.next();
+        this.ignoreWS();
+
+        const assignment_token = this.tokens[this.cursors.get()];
+
+        if (assignment_token.type !== uwu.assignment) {
+            this.error(assignment_token, this.code!).unexpected_token();
+        }
+
+        this.cursors.next();
+        this.ignoreWS();
+
+        const value_token = this.tokens[this.cursors.get()];
 
         this.cursors.delete();
 
@@ -107,6 +121,10 @@ export class Parser {
             }
 
             this.ignoreWS();
+
+            if (this.token.type === uwu.comment) {
+                continue;
+            }
 
             if (this.token.type === uwu.definition) {
                 this.stackeable();

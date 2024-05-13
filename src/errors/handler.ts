@@ -1,6 +1,7 @@
 import { InternalError } from "./InternalError";
 import { InvalidName } from "./InvalidName";
 import { UnexpectedToken } from "./UnexpectedToken";
+import { TypeExpected } from "./TypeExpected";
 
 export default function handler(token: moo.Token, code: string) {
 
@@ -16,10 +17,15 @@ export default function handler(token: moo.Token, code: string) {
         throw new UnexpectedToken(token.value, token.line, token.col, code);
     }
 
+    function type_expected() {
+        throw new TypeExpected("string", token.line, token.col, code);
+    }
+
     return {
         internal_error,
         invalid_name,
-        unexpected_token
+        unexpected_token,
+        type_expected
     }
 
 }
