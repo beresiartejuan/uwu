@@ -14,11 +14,7 @@ readFile("./src/example.uwu", (err, data) => {
     try {
         parser.parser(code);
     } catch (error) {
-        //if (error instanceof InternalError) {
-        //    console.error(error.toString());
-        //} else {
-        //    console.error(error);
-        //}
+        console.error(error!.toString());
     }
 
 });

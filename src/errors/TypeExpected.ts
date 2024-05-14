@@ -5,7 +5,7 @@ export class TypeExpected extends Error {
         const secondMessage = `Huh... I think it may be... ${infer_type}`;
         const codeLines = code.split('\n');
         const errorLine = codeLines[line - 1];
-        const errorPointer = ' '.repeat(column - 1) + `^ Mmh... Type expected at line ${line} ( ￣^￣)`;
+        const errorPointer = ' '.repeat(column - 1) + `^ Mmh... Type expected at line ${line} after ':' ( ￣^￣)`;
 
         super();
 

@@ -10,7 +10,9 @@ const lexer = moo.compile({
 
     [uwu.stucture]: { match: /(?:\bif\b|\belse\b)/ },
 
-    [uwu.type]: { match: /(?:\bstring\b|\bnumber\b|\bdict\b|\blist\b|\bobject\b|\bnull\b|\bboolean\b)/ },
+    [uwu.type]: {
+        match: [owo.type_string, owo.type_number, owo.type_null, owo.type_boolean]
+    },
 
     [uwu.identifier]: /[a-zA-Z_][a-zA-Z0-9_]*/,
 

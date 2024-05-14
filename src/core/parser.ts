@@ -5,7 +5,7 @@ import lexer from "./lexer";
 
 import handler from "../errors/handler";
 
-import { uwu } from "./rules";
+import { owo, uwu } from "./rules";
 
 export const enum State {
     DEFINITION,
@@ -33,10 +33,6 @@ export class Parser {
         this.cursors = new Cursor(0);
     }
 
-    setLexer(lexer: moo.Lexer) {
-        this.lexer = lexer;
-    }
-
     ignoreWS() {
 
         while (this.tokens[this.cursors.get()]?.type === uwu.WS) {
@@ -44,10 +40,6 @@ export class Parser {
         }
 
     }
-
-    define() { }
-
-    evaluate() { }
 
     stackeable() {
 
@@ -82,23 +74,31 @@ export class Parser {
 
         const type_token = this.tokens[this.cursors.get()];
 
-        if (type_token.type !== uwu.type) {
-            this.error(type_token, this.code!).type_expected();
-        }
-
         this.cursors.next();
         this.ignoreWS();
 
         const assignment_token = this.tokens[this.cursors.get()];
 
-        if (assignment_token.type !== uwu.assignment) {
-            this.error(assignment_token, this.code!).unexpected_token();
-        }
-
         this.cursors.next();
         this.ignoreWS();
 
         const value_token = this.tokens[this.cursors.get()];
+
+        if (type_token.type !== uwu.type) {
+            if (type_token.type === uwu.assignment) {
+                this.error(type_token, this.code!).type_expected(assignment_token);
+            } else if (type_token.type === uwu.identifier) {
+                this.error(type_token, this.code!).type_expected(value_token);
+            } else {
+                this.error(type_token, this.code!).unexpected_token();
+            }
+        }
+
+        if (assignment_token.type !== uwu.assignment) {
+            this.error(assignment_token, this.code!).unexpected_token();
+        }
+
+        this.stack.push(name_token.value, value_token.value, 'string', definition_token.value === owo.definition_let);
 
         this.cursors.delete();
 
@@ -114,7 +114,10 @@ export class Parser {
 
             this.token = this.tokens[this.cursors.get()];
 
-            if (!this.token) continue;
+            if (!this.token) {
+                this.cursors.next();
+                continue;
+            };
 
             if (!this.token.type) {
                 this.error(this.token, this.code).unexpected_token();
@@ -123,15 +126,12 @@ export class Parser {
             this.ignoreWS();
 
             if (this.token.type === uwu.comment) {
+                this.cursors.next();
                 continue;
             }
 
             if (this.token.type === uwu.definition) {
                 this.stackeable();
-            }
-
-            if (this.token.type === uwu.stucture) {
-                this.evaluate();
             }
 
             this.cursors.next();
