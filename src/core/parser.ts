@@ -14,6 +14,8 @@ export const enum State {
     ASSIGNMENT,
 };
 
+// Esto es un comentario ;P
+
 export class Parser {
 
     lexer: moo.Lexer;
