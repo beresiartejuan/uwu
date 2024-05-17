@@ -111,7 +111,6 @@ export class Parser {
         switch (true) {
 
             case (this.stack.isPrimitive(type)): {
-                console.log(name_token.value);
                 this.stack.push(
                     name_token.value,
                     value_token.value,
