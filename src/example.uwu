@@ -3,4 +3,4 @@ let nombre: string = "Juan";
 let edad: number = 21;
 
 // Error de tipo en la siguiente linea
-const cuidad: Ciudad = "Buenos Aires";
+const cuidad: string = "Buenos Aires";

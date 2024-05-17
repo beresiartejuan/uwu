@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
+import { owo } from './rules';
 
-type primitiveType = 'string' | 'number' | 'boolean' | 'null';
+export type primitiveType = owo.type_string | owo.type_number | owo.type_boolean | owo.type_null;
 
 interface StackItem {
     value: any;
@@ -60,5 +61,48 @@ export default class Stack {
 
     pop(uuid: string) {
         return this.items.delete(uuid);
+    }
+
+    isPrimitive(value: string) {
+        return (
+            value === owo.type_string ||
+            value === owo.type_number ||
+            value === owo.type_boolean ||
+            value === owo.type_null
+        );
+    }
+
+    show() {
+        const header = ["Name", "Type", "Value", "Mutable", "Cursor"];
+        const rows = Array.from(this.cursors.entries()).map(([name, uuid]) => {
+            const item = this.items.get(uuid)!;
+            return [
+                name,
+                item.primitiveType,
+                item.value.toString(),
+                item.mutable ? "Yes" : "No",
+                uuid
+            ];
+        });
+
+        const colWidths = header.map((col, i) =>
+            Math.max(
+                col.length,
+                ...rows.map(row => row[i].length + 2)
+            )
+        );
+
+        const separator = colWidths.map(width => '-'.repeat(width + 2)).join('+');
+
+        const formatRow = (row: string[]) =>
+            row.map((cell, i) => ` ${cell.padEnd(colWidths[i])} `).join('|');
+
+        console.log(separator);
+        console.log(`|${formatRow(header)}|`);
+        console.log(separator);
+        rows.forEach(row => {
+            console.log(`|${formatRow(row)}|`);
+        });
+        console.log(separator);
     }
 }

@@ -1,5 +1,5 @@
 import type { Token } from "moo";
-import Stack from "./stack";
+import Stack, { primitiveType } from "./stack";
 import Cursor from "./cursor";
 import lexer from "./lexer";
 
@@ -49,6 +49,7 @@ export class Parser {
 
         const definition_token = this.tokens[this.cursors.get()];
 
+        // Si el primer token no es una definición, lanzar un error de token inesperado.
         if (definition_token.type !== uwu.definition) {
             this.error(definition_token, this.code!).unexpected_token();
         }
@@ -58,6 +59,7 @@ export class Parser {
 
         const name_token = this.tokens[this.cursors.get()];
 
+        // Si el token no es un identificador válido, lanzar un error de nombre inválido.
         if (name_token.type !== uwu.identifier) {
             this.error(name_token, this.code!).invalid_name(name_token.value);
         }
@@ -86,12 +88,16 @@ export class Parser {
 
         const value_token = this.tokens[this.cursors.get()];
 
+        // Verificar si el tipo de token es el esperado, si no, manejar diferentes errores posibles.
         if (type_token.type !== uwu.type) {
             if (type_token.type === uwu.assignment) {
+                // Si el token es '=', se esperaba un tipo antes de la asignación.
                 this.error(type_token, this.code!).type_expected(assignment_token);
             } else if (type_token.type === uwu.identifier) {
+                // Si el token es un identificador, también se esperaba un tipo.
                 this.error(type_token, this.code!).type_expected(value_token);
             } else {
+                // Cualquier otro token es inesperado.
                 this.error(type_token, this.code!).unexpected_token();
             }
         }
@@ -100,7 +106,26 @@ export class Parser {
             this.error(assignment_token, this.code!).unexpected_token();
         }
 
-        this.stack.push(name_token.value, value_token.value, 'string', definition_token.value === owo.definition_let);
+        const type = type_token.value;
+
+        switch (true) {
+
+            case (this.stack.isPrimitive(type)): {
+                console.log(name_token.value);
+                this.stack.push(
+                    name_token.value,
+                    value_token.value,
+                    type as primitiveType,
+                    definition_token.value === owo.definition_let
+                );
+                break;
+            }
+
+            default: {
+                break;
+            }
+
+        }
 
         this.cursors.delete();
 

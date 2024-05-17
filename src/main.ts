@@ -13,6 +13,7 @@ readFile("./src/example.uwu", (err, data) => {
 
     try {
         parser.parser(code);
+        parser.stack.show();
     } catch (error) {
         console.error(error!.toString());
     }
