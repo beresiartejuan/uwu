@@ -11,12 +11,13 @@ const lexer = moo.compile({
     [uwu.stucture]: { match: /(?:\bif\b|\belse\b)/ },
 
     [uwu.type]: {
-        match: [owo.type_string, owo.type_number, owo.type_null, owo.type_boolean]
+        match: [owo.type_string, owo.type_number, owo.type_null, owo.type_boolean, owo.type_dict, owo.type_list]
     },
 
     [uwu.identifier]: /[a-zA-Z_][a-zA-Z0-9_]*/,
 
     // Otros...
+    [uwu.boolean]: { match: [owo.boolean_false, owo.boolean_true] },
     [uwu.WS]: { match: /[ \t]+/, lineBreaks: true },// Espacios en blanco
     [uwu.newline]: { match: /\r?\n/, lineBreaks: true }, // Nuevas lineas
     [uwu.comment]: /\/\/.*?$/, // Comentarios

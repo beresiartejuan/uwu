@@ -1,8 +1,7 @@
 import type { Token } from "moo";
-import Stack, { primitiveType } from "./stack";
+import Stack, { PrimitiveType, ComplexType } from "./stack";
 import Cursor from "./cursor";
 import lexer from "./lexer";
-
 import handler from "../errors/handler";
 
 import { owo, uwu } from "./rules";
@@ -14,8 +13,6 @@ export const enum State {
     ASSIGNMENT,
 };
 
-// Esto es un comentario ;P
-
 export class Parser {
 
     lexer: moo.Lexer;
@@ -24,9 +21,8 @@ export class Parser {
     tokens: Token[];
     cursors: Cursor;
     token?: Token;
-    sub_tokens: Token[] = [];
     stack: Stack = new Stack();
-    code?: string;
+    code: string = "";
 
     constructor() {
         this.error = handler;
@@ -35,75 +31,42 @@ export class Parser {
         this.cursors = new Cursor(0);
     }
 
-    ignoreWS() {
-
-        while (this.tokens[this.cursors.get()]?.type === uwu.WS) {
-            this.cursors.next();
-        }
-
-    }
-
     stackeable() {
 
         this.cursors.create();
 
         const definition_token = this.tokens[this.cursors.get()];
 
-        // Si el primer token no es una definición, lanzar un error de token inesperado.
-        if (definition_token.type !== uwu.definition) {
-            this.error(definition_token, this.code!).unexpected_token();
-        }
-
         this.cursors.next();
-        this.ignoreWS();
 
         const name_token = this.tokens[this.cursors.get()];
 
-        // Si el token no es un identificador válido, lanzar un error de nombre inválido.
-        if (name_token.type !== uwu.identifier) {
-            this.error(name_token, this.code!).invalid_name(name_token.value);
-        }
-
         this.cursors.next();
-        this.ignoreWS();
 
         const colon_token = this.tokens[this.cursors.get()];
 
-        if (colon_token.type !== uwu.colon) {
-            this.error(colon_token, this.code!).unexpected_token();
-        }
-
         this.cursors.next();
-        this.ignoreWS();
 
         const type_token = this.tokens[this.cursors.get()];
 
-        this.cursors.next();
-        this.ignoreWS();
-
-        const assignment_token = this.tokens[this.cursors.get()];
-
-        this.cursors.next();
-        this.ignoreWS();
-
-        const value_token = this.tokens[this.cursors.get()];
-
-        // Verificar si el tipo de token es el esperado, si no, manejar diferentes errores posibles.
-        if (type_token.type !== uwu.type) {
-            if (type_token.type === uwu.assignment) {
-                // Si el token es '=', se esperaba un tipo antes de la asignación.
-                this.error(type_token, this.code!).type_expected(assignment_token);
-            } else if (type_token.type === uwu.identifier) {
-                // Si el token es un identificador, también se esperaba un tipo.
-                this.error(type_token, this.code!).type_expected(value_token);
-            } else {
-                // Cualquier otro token es inesperado.
-                this.error(type_token, this.code!).unexpected_token();
-            }
+        if (definition_token.type !== uwu.definition) {
+            this.error(definition_token, this.code).unexpected_token();
         }
 
-        if (assignment_token.type !== uwu.assignment) {
-            this.error(assignment_token, this.code!).unexpected_token();
+        if (name_token.type !== uwu.identifier) {
+            this.error(name_token, this.code).invalid_name(name_token.value);
+        }
+
+        if (colon_token.type !== uwu.colon) {
+            if(colon_token.type === uwu.assignment){
+                this.error(colon_token, this.code).type_expected();
+            }
+
+            this.error(colon_token, this.code).unexpected_token();
+        }
+
+        if (type_token.type !== uwu.type) {
+            this.error(type_token, this.code).type_expected();
         }
 
         const type = type_token.value;
@@ -111,12 +74,47 @@ export class Parser {
         switch (true) {
 
             case (this.stack.isPrimitive(type)): {
+
+                this.cursors.next();
+        
+                const assignment_token = this.tokens[this.cursors.get()];
+
+                this.cursors.next();
+
+                const value_token = this.tokens[this.cursors.get()];
+
+                if (assignment_token.type !== uwu.assignment) {
+                    this.error(assignment_token, this.code!).unexpected_token();
+                }
+
                 this.stack.push(
                     name_token.value,
+                    type as PrimitiveType,
+                    definition_token.value === owo.definition_let,
                     value_token.value,
-                    type as primitiveType,
-                    definition_token.value === owo.definition_let
                 );
+                break;
+            }
+
+            case (this.stack.isComplex(type)): {
+                
+                this.cursors.next();
+        
+                const assignment_token = this.tokens[this.cursors.get()];
+
+                this.cursors.next();
+
+                const value_token = this.tokens[this.cursors.get()];
+
+                if (assignment_token.type !== uwu.assignment) {
+                    this.error(assignment_token, this.code!).unexpected_token();
+                }
+
+                this.stack.push(
+                    name_token.value,
+                    type as ComplexType,
+                    definition_token.value === owo.definition_let
+                )
                 break;
             }
 
@@ -130,11 +128,17 @@ export class Parser {
 
     }
 
+    isSkipeable(token: Token){
+        return token.type === uwu.comment || token.type === uwu.WS || token.type === uwu.newline;
+    }
+
     parser(code: string) {
 
         this.code = code;
 
-        this.tokens = Array.from(this.lexer.reset(this.code));
+        this.tokens = Array.from(this.lexer.reset(this.code)).filter(
+            token => token.type !== uwu.WS
+        );
 
         while (this.cursors.get() < this.tokens.length) {
 
@@ -149,9 +153,7 @@ export class Parser {
                 this.error(this.token, this.code).unexpected_token();
             }
 
-            this.ignoreWS();
-
-            if (this.token.type === uwu.comment) {
+            if (this.isSkipeable(this.token)) {
                 this.cursors.next();
                 continue;
             }

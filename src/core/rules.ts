@@ -17,6 +17,7 @@ export const enum uwu {
     stucture = "structure",
     type = "type",
     identifier = "identifier",
+    boolean = 'boolean',
     WS = "WS",
     newline = "newline",
     comment = "comment",
@@ -39,7 +40,7 @@ export const enum uwu {
 }
 
 export const enum owo {
-    definition_function = "function",
+    definition_function = "fn",
     definition_const = "const",
     definition_let = "let",
     definition_class = "class",
@@ -52,4 +53,6 @@ export const enum owo {
     type_object = "object",
     type_null = "null",
     type_boolean = "boolean",
+    boolean_false = 'false',
+    boolean_true = 'true'
 }

@@ -1,28 +1,66 @@
 import { v4 as uuidv4 } from 'uuid';
 import { owo } from './rules';
 
-export type primitiveType = owo.type_string | owo.type_number | owo.type_boolean | owo.type_null;
+export type PrimitiveType = owo.type_string | owo.type_number | owo.type_boolean | owo.type_null;
+export type ComplexType = owo.type_dict | owo.type_list;
 
-interface StackItem {
+interface Item {
     value: any;
-    primitiveType: primitiveType;
     mutable: boolean;
 }
 
+interface PrimitiveItem extends Item {
+    value: string;
+    type: PrimitiveType;
+}
+
+interface ComplexItem extends Item {
+    value: Map<string, string>;
+    type: ComplexType;
+//    rules: Array<string>;
+}
+
 export default class Stack {
-    private items: Map<string, StackItem>;
-    private cursors: Map<string, string>;
+    private items: Map<string, PrimitiveItem | ComplexItem>;
+    private cursors: Map<string, string>; 
 
     constructor() {
         this.items = new Map();
         this.cursors = new Map();
     }
 
-    push(name: string, value: any, primitiveType: primitiveType, mutable: boolean) {
+    push(name: string, type: ComplexType | PrimitiveType, mutable: boolean, value?: string | number | boolean | null) {
+
         const id = uuidv4();
-        this.items.set(id, { value, primitiveType, mutable });
-        this.cursors.set(name, id);
-        return id;
+        
+        if(this.isPrimitive(type)){
+
+            const item: PrimitiveItem = {
+                type: (type as PrimitiveType),
+                mutable,
+                value: (value ? value.toString() : "")
+            };
+
+            this.items.set(id, item);
+            this.cursors.set(name, id);
+            return id;
+
+        }
+
+        if(this.isComplex(type)){
+
+            const item: ComplexItem = {
+                type: (type as ComplexType),
+                mutable,
+                value: new Map()
+            }
+
+            this.items.set(id, item);
+            this.cursors.set(name, id);
+            return id;
+
+        }
+
     }
 
     copy(uuid: string) {
@@ -72,17 +110,35 @@ export default class Stack {
         );
     }
 
+    isComplex(value: string){
+        return (
+            value === owo.type_dict ||
+            value === owo.type_list
+        );
+    }
+
     show() {
         const header = ["Name", "Type", "Value", "Mutable", "Cursor"];
         const rows = Array.from(this.cursors.entries()).map(([name, uuid]) => {
             const item = this.items.get(uuid)!;
-            return [
-                name,
-                item.primitiveType,
-                item.value.toString(),
-                item.mutable ? "Yes" : "No",
-                uuid
-            ];
+
+            if(this.isPrimitive(item.type)){
+                return [
+                    name,
+                    item.type,
+                    item.value.toString(),
+                    item.mutable ? "Yes" : "No",
+                    uuid
+                ];
+            }else {
+                return [
+                    name,
+                    item.type,
+                    "-",
+                    item.mutable ? "Yes" : "No",
+                    uuid
+                ];
+            }
         });
 
         const colWidths = header.map((col, i) =>
