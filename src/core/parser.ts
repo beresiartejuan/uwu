@@ -99,6 +99,12 @@ export class Parser {
             case (this.stack.isComplex(type)): {
                 
                 this.cursors.next();
+
+                if(type === owo.type_list){
+
+                    
+
+                }                
         
                 const assignment_token = this.tokens[this.cursors.get()];
 
