@@ -2,6 +2,8 @@ export default class Cursor {
 
     internal_cursors: number[] = [];
 
+    saved_cursors: Map<string, number> = new Map();
+
     constructor(first: number) {
         this.internal_cursors.push(first);
     }
@@ -47,6 +49,20 @@ export default class Cursor {
     edit(index: number, quantity: number) {
         if (index >= this.internal_cursors.length || index < 0) return;
         this.internal_cursors[index] = quantity + this.internal_cursors[index];
+    }
+
+    saveAs(name: string, value?: number) {
+        this.saved_cursors.set(name, value ? value : this.get());
+    }
+
+    use(name: string) {
+        const used = this.saved_cursors.get(name);
+        if (used) {
+            this.internal_cursors.push(used);
+        } else {
+            this.saveAs(name)
+            this.use(name)
+        }
     }
 
 }
