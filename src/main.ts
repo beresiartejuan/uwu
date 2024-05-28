@@ -1,5 +1,6 @@
-import { Parser } from "./core/parser";
+//import { Parser } from "./core/parser";
 import { readFile } from "fs";
+import ParserV2 from "./core/parserV2";
 
 readFile("./src/example.uwu", (err, data) => {
 
@@ -9,11 +10,10 @@ readFile("./src/example.uwu", (err, data) => {
     }
 
     let code = data.toString("utf8")
-    const parser = new Parser();
 
     try {
-        parser.parser(code);
-        parser.stack.show();
+        const parser = new ParserV2(code);
+        console.log(parser.contexts.keys())
     } catch (error) {
         console.error(error!.toString());
     }

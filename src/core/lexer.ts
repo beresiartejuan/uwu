@@ -4,8 +4,12 @@ import { uwu, owo } from "./rules";
 
 const lexer = moo.compile({
 
+    [uwu.rule]: {
+        match: [owo.rule_use]
+    },
+
     [uwu.definition]: {
-        match: [owo.definition_function, owo.definition_const, owo.definition_let, owo.definition_class]
+        match: [owo.definition_function, owo.definition_const, owo.definition_let, owo.definition_class, owo.definition_context]
     },
 
     [uwu.stucture]: { match: /(?:\bif\b|\belse\b)/ },

@@ -5,19 +5,16 @@ let edad: number = 21;
 // Error de tipo en la siguiente linea
 const cuidad: string = "Buenos Aires";
 
-fn mari(){
-    const apellido = "Beresiarte"
-
-    if(judnwhinew){
-
-    }
-    
+ctx mari {
+    const apellido = "Doe"
 };
 
-fn main(){
+ctx main {
 
     // Codigo principal
-    const juan: string = "Juan";
+    const juan: string = "John";
+
+    use mari;
 
 };
 

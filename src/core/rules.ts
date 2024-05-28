@@ -14,6 +14,7 @@
 
 export const enum uwu {
     definition = "definition",
+    rule = "rule",
     stucture = "structure",
     type = "type",
     identifier = "identifier",
@@ -40,6 +41,7 @@ export const enum uwu {
 }
 
 export const enum owo {
+    definition_context = "ctx",
     definition_function = "fn",
     definition_const = "const",
     definition_let = "let",
@@ -54,5 +56,6 @@ export const enum owo {
     type_null = "null",
     type_boolean = "boolean",
     boolean_false = 'false',
-    boolean_true = 'true'
+    boolean_true = 'true',
+    rule_use = 'use'
 }

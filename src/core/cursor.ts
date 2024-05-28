@@ -55,14 +55,14 @@ export default class Cursor {
         this.saved_cursors.set(name, value ? value : this.get());
     }
 
-    use(name: string) {
+    use(name: string): void {
         const used = this.saved_cursors.get(name);
-        if (used) {
-            this.internal_cursors.push(used);
-        } else {
-            this.saveAs(name)
-            this.use(name)
-        }
+
+        if (!used) this.saveAs(name);
+
+        const new_used = this.saved_cursors.get(name) as number;
+
+        this.internal_cursors.push(new_used);
     }
 
 }
