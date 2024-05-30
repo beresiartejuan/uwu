@@ -12,7 +12,7 @@ export default class Stack<T> {
      * Creates an instance of Stack.
      * @param {T[]} inital_stack - An optional array to initialize the stack with.
      */
-    constructor(inital_stack: T[]) {
+    constructor(inital_stack: T[] = []) {
         this.internal_stack.concat(inital_stack);
     }
 

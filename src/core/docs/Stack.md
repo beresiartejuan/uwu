@@ -11,7 +11,7 @@ export default class Stack<T> {
     internal_stack: Array<T> = [];
     marks: Map<string, number> = new Map();
 
-    constructor(inital_stack: T[]) {
+    constructor(inital_stack: T[] = []) {
         this.internal_stack.concat(inital_stack);
     }
 
