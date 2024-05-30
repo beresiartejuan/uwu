@@ -4,7 +4,7 @@ import token_types from './token_types';
 import definition from './definition';
 import types from './types';
 import literal from './literal';
-import structure from './structute';
+import structure from './structure';
 
 const definitions_match = [
     definition.definition_class,
