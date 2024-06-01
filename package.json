@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "build": "tsc",
-    "test": "jest",
+    "pretest": "tsc",
+    "test": "jest --testPathPattern=dist/core/test",
     "start": "node ./dist/main.js"
   },
   "keywords": [],
