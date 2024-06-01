@@ -40,6 +40,7 @@ const lexer = moo.compile({
     [token_types.number]: /0|[1-9][0-9]*/,
     [token_types.boolean]: { match: [literal.false, literal.true] },
     // Tokens importantes
+    [token_types.require]: { match: /#require/ },
     [token_types.rule]: { match: [literal.use] },
     [token_types.definition]: { match: definitions_match },
     [token_types.stucture]: { match: structures_match },

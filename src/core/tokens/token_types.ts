@@ -34,7 +34,8 @@ const enum token_types {
     lessThanOrEqual = "lessThanOrEqual",
     greaterThanOrEqual = "greaterThanOrEqual",
     exclamation = "exclamation",
-    question = "question"
+    question = "question",
+    require = "require"
 };
 
 export default token_types;

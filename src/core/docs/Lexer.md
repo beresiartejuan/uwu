@@ -96,7 +96,8 @@ const enum token_types {
     lessThanOrEqual = "lessThanOrEqual",
     greaterThanOrEqual = "greaterThanOrEqual",
     exclamation = "exclamation",
-    question = "question"
+    question = "question",
+    require = "require"
 }
 ```
 
@@ -147,6 +148,7 @@ const lexer = moo.compile({
     [token_types.boolean]: { match: [literal.false, literal.true] },
 
     // Important tokens
+    [token_types.require]: { match: /#require/ },
     [token_types.rule]: { match: [literal.use] },
     [token_types.definition]: { match: definitions_match },
     [token_types.structure]: { match: structures_match },
@@ -201,6 +203,7 @@ export default lexer;
   - `boolean`: Matches `true` and `false` literals.
 
 - **Important Tokens**
+  - `require`: Matches the `#require` keyword.
   - `rule`: Matches the `use` keyword.
   - `definition`: Matches keywords for various definitions such as `class`, `const`, `ctx`, `fn`, `let`.
   - `structure`: Matches control structures such as `if`, `else`, `for`, `while`.

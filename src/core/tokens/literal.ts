@@ -1,7 +1,7 @@
 const enum literal {
     use = "use",
     false = "false",
-    true = "true"
+    true = "true",
 };
 
 export default literal;
