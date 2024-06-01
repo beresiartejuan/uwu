@@ -22,4 +22,16 @@ describe("Lexer test", function(){
         expect(tokens.at(5)).toHaveProperty("type", token_types.type);
     });
 
+    it("All Types detected", function(){
+        
+        const new_tokens = Array.from(lexer.reset("\"Hola a\";1223;\"223\";true;false;"));
+
+        expect(new_tokens.at(0)).toHaveProperty("type", token_types.string);
+        expect(new_tokens.at(2)).toHaveProperty("type", token_types.number);
+        expect(new_tokens.at(4)).toHaveProperty("type", token_types.string);
+        expect(new_tokens.at(6)).toHaveProperty("type", token_types.boolean);
+        expect(new_tokens.at(8)).toHaveProperty("type", token_types.boolean);
+
+    });
+
 });
