@@ -18,6 +18,14 @@ describe("Stack test", function(){
 
         expect(number_stack.get(0)).toBe(10);
 
+        const stack = new Stack<number>([1,2,3]);
+
+        expect(stack.get()).toBe(3);
+
+        expect(stack.pop()).toBe(3);
+
+        expect(stack.pop()).toBe(2);
+
     });
 
 });

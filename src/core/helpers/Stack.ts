@@ -13,7 +13,7 @@ export default class Stack<T> {
      * @param {T[]} inital_stack - An optional array to initialize the stack with.
      */
     constructor(inital_stack: T[] = []) {
-        this.internal_stack.concat(inital_stack);
+        this.internal_stack.push(...inital_stack);
     }
 
     /**

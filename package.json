@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "pretest": "tsc",
-    "test": "jest --testPathPattern=dist/core/test",
+    "test": "jest --testPathPattern=dist/core/test --verbose",
     "start": "node ./dist/main.js"
   },
   "keywords": [],
