@@ -19,9 +19,16 @@ fn area(f: Figura): number {
     }
 }
 
-match fs::read("figuras.txt") {
-    { ok: true, content } => print(content),
-    { ok: false, error } => print("no se pudo leer:", error),
+let figuras: Figura[] = [
+    { tipo: "circulo", radio: 1 },
+    { tipo: "rectangulo", ancho: 2, alto: 3 },
+];
+let total = figuras.map(area).sum();
+
+// lo que puede fallar devuelve una unión, y el `match` obliga a manejar el error
+match fs::write("areas.txt", "área total: {total}\n") {
+    { ok: true } => print("guardado"),
+    { ok: false, error } => print("no se pudo guardar:", error),
 }
 ```
 
@@ -102,7 +109,8 @@ abrilo con `rlwrap uwu`.
 | `NO_COLOR` | desactiva los colores en los errores |
 
 El programa termina con código `0` si todo salió bien, `1` si hubo errores de
-compilación y `101` si hubo un pánico en ejecución.
+compilación y `101` si hubo un pánico en ejecución. Si se cierra la salida
+(`uwu programa.uwu | head`), termina en silencio con `0`.
 
 ## Tour rápido
 
@@ -128,6 +136,7 @@ fn factorial(n: number): number {
 
 let pares = [1, 2, 3, 4].filter(|n| n % 2 == 0);
 let suma = [1, 2, 3].fold(0, |acc, n| acc + n);
+let texto = "hola mundo".slice(5);     // "mundo": el final es opcional
 ```
 
 ### Tuplas, desestructuración e interpolación
@@ -145,6 +154,13 @@ let { x, y } = { x: 1, y: 2 };
 for (i, nombre) in ["ana", "beto"].enumerate() {
     print("{i}: {nombre.upper()}");
 }
+
+// también en los parámetros de los closures
+let sumas = [(1, 2), (3, 4)].map(|(a, b)| a + b);   // [3, 7]
+
+// la variable del `for` es inmutable; con `for let` se puede modificar
+let tareas = [{ titulo: "pan", hecha: false }];
+for let t in tareas { t.hecha = true; }
 ```
 
 ### Uniones, genéricos y `match`
@@ -224,6 +240,7 @@ print(area(2));                 // o sin él, después de `using`
 ### Biblioteca estándar
 
 Cada biblioteca se importa con `<...>` y sus miembros se usan con `::`, como `std::` en C++.
+Los nombres están en inglés (`fs::read`, `proc::run`, `time::now`).
 Lo que puede fallar devuelve `{ ok: true, ... } | { ok: false, error: string }`,
 así que el compilador te obliga a manejar el error.
 
@@ -238,16 +255,16 @@ match proc::shell("ls /tmp | wc -l") {
 print("hoy:", time::iso(time::now()));
 ```
 
-| Biblioteca | Para qué |
-|---|---|
-| `<fs>` | leer, escribir, listar, copiar, borrar archivos; permisos y enlaces |
-| `<path>` | unir y descomponer rutas |
-| `<env>` | variables de entorno y directorio actual |
-| `<proc>` | ejecutar programas, shell, procesos en segundo plano, señales |
-| `<io>` | leer de stdin, escribir en stdout y stderr |
-| `<time>` | hora actual, fechas, medir y esperar |
-| `<os>` | información del sistema: usuario, kernel, memoria, CPUs, carga |
-| `<math>` | trigonometría, logaritmos, números aleatorios |
+| Biblioteca | Para qué | Algunas funciones |
+|---|---|---|
+| `<fs>` | archivos y directorios | `read` `write` `append` `list_dir` `copy` `remove` `stat` |
+| `<path>` | unir y descomponer rutas | `join` `file_name` `extension` `parent` |
+| `<env>` | variables de entorno y directorio actual | `get` `set` `current_dir` `home` |
+| `<proc>` | programas, shell, procesos en segundo plano, señales | `run` `shell` `spawn` `kill` `args` `exit` |
+| `<io>` | stdin, stdout y stderr | `read_line` `read_all` `write` `write_err` |
+| `<time>` | hora actual, fechas, medir y esperar | `now` `date` `iso` `elapsed` `sleep` |
+| `<os>` | información del sistema | `name` `user` `kernel` `memory` `cpus` |
+| `<math>` | trigonometría, logaritmos, números aleatorios | `sin` `ln` `random` `random_range` |
 
 `print`, `panic` y `assert` están siempre disponibles sin importar nada.
 
@@ -336,10 +353,13 @@ Los cambios de cada versión están en el [CHANGELOG](CHANGELOG.md).
 
 ## Próximos pasos
 
-- [x] Tuplas y desestructuración en `let`
+- [x] Tuplas y desestructuración en `let` y `for`
 - [x] Interpolación de strings: `"hola {nombre}"`
 - [x] `export namespace` para agrupar exports bajo un prefijo
 - [x] REPL
+- [x] Desestructuración en los parámetros de los closures y `for let`
+- [x] Biblioteca estándar con nombres en inglés
+- [ ] `<http>` para hacer pedidos HTTP/HTTPS y `<json>` para leer las respuestas
 - [ ] Narrowing en `if` (`if f.tipo == "circulo" { f.radio }`)
 - [ ] `impl` para asociar métodos a tipos
 - [ ] Patrones con `|` en `match` (`(0, _) | (_, 0) => ...`)
