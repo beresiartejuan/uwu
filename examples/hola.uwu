@@ -1,0 +1,24 @@
+// Variables: inmutables por defecto, como en Rust
+let nombre = "Juan";
+let mut contador = 0;
+
+// Los bloques, `if` y `match` son expresiones: devuelven un valor
+let saludo = if contador == 0 { "¡Hola" } else { "Chau" };
+print(saludo + ", " + nombre + "!");
+
+// Funciones con tipos de TypeScript. La última expresión (sin `;`) es el valor de retorno
+fn factorial(n: number): number {
+    if n <= 1 { 1 } else { n * factorial(n - 1) }
+}
+
+for i in 1..6 {
+    contador += 1;
+    print(i.to_string() + "! =", factorial(i));
+}
+
+// Closures al estilo Rust, con inferencia de tipos
+let numeros = [1, 2, 3, 4, 5, 6];
+let pares = numeros.filter(|n| n % 2 == 0);
+let cuadrados = pares.map(|n| n * n);
+print("pares:", pares, "cuadrados:", cuadrados);
+print("suma:", numeros.fold(0, |acc, n| acc + n));

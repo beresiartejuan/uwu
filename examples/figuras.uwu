@@ -1,0 +1,38 @@
+// Uniones discriminadas de TypeScript + `match` exhaustivo de Rust
+
+type Figura =
+    | { tipo: "circulo", radio: number }
+    | { tipo: "rectangulo", ancho: number, alto: number }
+    | { tipo: "triangulo", base: number, altura: number };
+
+fn area(f: Figura): number {
+    // Dentro de cada brazo, el tipo se estrecha: acá `radio` existe seguro.
+    // Si te olvidás de un caso, el compilador te avisa.
+    match f {
+        { tipo: "circulo", radio } => 3.14159 * radio * radio,
+        { tipo: "rectangulo", ancho, alto } => ancho * alto,
+        { tipo: "triangulo", base, altura } => base * altura / 2,
+    }
+}
+
+fn describir(f: Figura): string {
+    match f {
+        { tipo: "circulo", radio } if radio > 10 => "un círculo enorme",
+        { tipo: "circulo" } => "un círculo",
+        _ => "un polígono",
+    }
+}
+
+let figuras: Figura[] = [
+    { tipo: "circulo", radio: 2 },
+    { tipo: "rectangulo", ancho: 3, alto: 4 },
+    { tipo: "triangulo", base: 6, altura: 2 },
+    { tipo: "circulo", radio: 20 },
+];
+
+for f in figuras {
+    print(describir(f), "→ área", area(f).round());
+}
+
+let total = figuras.map(area).sum();
+print("área total:", total.round());

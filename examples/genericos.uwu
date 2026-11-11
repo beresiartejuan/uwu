@@ -1,0 +1,66 @@
+// Genéricos y tipos recursivos: Option y Result al estilo Rust,
+// construidos con uniones de TypeScript.
+
+type Option<T> = { some: true, value: T } | { some: false };
+type Result<T, E> = { ok: true, value: T } | { ok: false, error: E };
+
+fn some<T>(value: T): Option<T> { { some: true, value } }
+
+fn buscar<T>(items: T[], pred: (item: T) => boolean): Option<T> {
+    for item in items {
+        if pred(item) { return some(item); }
+    }
+    { some: false }
+}
+
+fn dividir(a: number, b: number): Result<number, string> {
+    if b == 0 {
+        return { ok: false, error: "no se puede dividir por cero" };
+    }
+    { ok: true, value: a / b }
+}
+
+let edades = [12, 17, 25, 31];
+match buscar(edades, |e| e >= 18) {
+    { some: true, value } => print("primer adulto:", value),
+    { some: false } => print("no hay adultos"),
+}
+
+for divisor in [4, 0] {
+    match dividir(20, divisor) {
+        { ok: true, value } => print("20 /", divisor, "=", value),
+        { ok: false, error } => print("error:", error),
+    }
+}
+
+// Un árbol binario: tipo recursivo y genérico
+type Arbol<T> =
+    | { tipo: "hoja" }
+    | { tipo: "nodo", valor: T, izq: Arbol<T>, der: Arbol<T> };
+
+fn insertar(arbol: Arbol<number>, x: number): Arbol<number> {
+    match arbol {
+        { tipo: "hoja" } => { tipo: "nodo", valor: x, izq: { tipo: "hoja" }, der: { tipo: "hoja" } },
+        { tipo: "nodo", valor, izq, der } =>
+            if x < valor { { tipo: "nodo", valor, izq: insertar(izq, x), der } }
+            else { { tipo: "nodo", valor, izq, der: insertar(der, x) } },
+    }
+}
+
+fn en_orden<T>(arbol: Arbol<T>): T[] {
+    match arbol {
+        { tipo: "hoja" } => [],
+        { tipo: "nodo", valor, izq, der } => {
+            let mut lista = en_orden(izq);
+            lista.push(valor);
+            for x in en_orden(der) { lista.push(x); }
+            lista
+        }
+    }
+}
+
+let mut arbol: Arbol<number> = { tipo: "hoja" };
+for n in [50, 30, 70, 20, 40, 60, 80] {
+    arbol = insertar(arbol, n);
+}
+print("ordenado:", en_orden(arbol));

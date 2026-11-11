@@ -1,0 +1,29 @@
+// Este archivo tiene errores a propósito, para mostrar los mensajes del compilador.
+// Probalo con: uwu check examples/errores.uwu
+
+type Figura =
+    | { tipo: "circulo", radio: number }
+    | { tipo: "cuadrado", lado: number };
+
+let x = 5;
+x = 10;                          // inmutable
+
+let edad: number = "veinte";     // tipo incorrecto
+
+fn area(f: Figura): number {
+    match f {                    // falta el caso "cuadrado"
+        { tipo: "circulo", radio } => radio * radio * 3.14,
+    }
+}
+
+fn doble(n: number): number {
+    n * 2;                       // el `;` hace que no devuelva nada
+}
+
+let f: Figura = { tipo: "circulo", radio: 1 };
+print(f.radio);                  // no todas las variantes tienen `radio`
+
+let saludo = "hola";
+print(salduo);                   // typo
+
+let estado: "activo" | "inactivo" = "pausado";

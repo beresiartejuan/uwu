@@ -1,9 +1,0 @@
-use "env";
-
-ctx main {
-
-    use env;
-
-    let counter: &number = 0;
-
-}
