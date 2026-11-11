@@ -213,6 +213,11 @@ impl Checker {
                 self.scopes.push(HashMap::new());
                 self.prep_pattern(pattern);
                 self.bind_irrefutable(pattern, &elem, "`for`");
+                for name in pattern.names() {
+                    if let Some(v) = self.scopes.last_mut().unwrap().get_mut(name) {
+                        v.kind = VarKind::LoopVar;
+                    }
+                }
                 self.loop_stack.push(Some(LoopCtx { has_break: false }));
                 self.check_block(body, None);
                 self.loop_stack.pop();
@@ -270,7 +275,7 @@ impl Checker {
             return arr(NEVER);
         }
         let member_types: Vec<Type> = items.iter().map(|i| self.check_expr(i, None)).collect();
-        arr(widen(&mk_union(member_types)))
+        arr(widen_value(&mk_union(member_types)))
     }
 
     fn check_object(&mut self, fields: &[ObjField], _span: Span, expected: Option<&Type>) -> Type {
@@ -390,8 +395,9 @@ impl Checker {
         }
     }
 
-    pub(super) fn check_mutable(&mut self, target: &Expr, span: Span) {
-        let Some((root, v)) = self.root_var(target) else { return };
+    /// Reporta un error y devuelve `false` si `target` no se puede modificar.
+    pub(super) fn check_mutable(&mut self, target: &Expr, span: Span) -> bool {
+        let Some((root, v)) = self.root_var(target) else { return true };
         if v.kind == VarKind::Builtin {
             self.error(format!("no se puede modificar `{}`: es parte de la biblioteca estándar", root), span, None);
         } else if v.kind == VarKind::Imported {
@@ -400,23 +406,42 @@ impl Checker {
                 span,
                 Some("exportá una función que lo modifique, o hacé una copia local".into()),
             );
-        } else if v.kind != VarKind::Var {
+        } else if !matches!(v.kind, VarKind::Var | VarKind::LoopVar) {
             self.error(format!("no se puede modificar `{}`: es una función", root), span, None);
         } else if !v.mutable {
             let hint = match root.split_once("::") {
                 Some((ns, name)) => format!("declarala con `let mut {}` dentro de `namespace {}`", name, ns),
+                None if v.kind == VarKind::LoopVar => format!("declarala con `for let {} in ...`", root),
                 None => format!("declarala con `let mut {}`", root),
             };
             self.error(format!("no se puede modificar `{}` porque es inmutable", root), span, Some(hint));
+        } else {
+            return true;
         }
+        false
     }
 
     fn check_assign(&mut self, op: &str, target: &Expr, value: &Expr) -> Type {
         let tt = self.check_expr(target, None);
-        self.check_mutable(target, target.span());
+        let mutable = self.check_mutable(target, target.span());
         if op == "=" {
             let vt = self.check_expr(value, Some(&tt));
-            self.expect_assignable(&vt, &tt, value.span(), None);
+            // Si no se puede modificar, el error de tipos no agrega nada
+            if mutable {
+                // `let mut q = p;` con `p: { ok: true }`: `q.ok` no puede cambiar
+                let hint = match (target, &tt) {
+                    (Expr::Member { name, .. }, Type::Lit(_)) => Some(format!(
+                        "`{}` tiene el tipo literal `{}`; si querés poder cambiarlo, anotá el tipo \
+                         de la variable, ej: `let mut x: {{ {}: {} }} = ...`",
+                        name,
+                        print(&tt),
+                        name,
+                        print(&widen(&tt))
+                    )),
+                    _ => None,
+                };
+                self.expect_assignable(&vt, &tt, value.span(), hint);
+            }
             return VOID;
         }
         let vt = self.check_expr(value, None);

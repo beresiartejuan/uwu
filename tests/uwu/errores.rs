@@ -41,3 +41,25 @@ fn string_sin_cerrar() {
 fn parametro_sin_tipo() {
     assert_eq!(errors("fn f(x) { }")[0], "falta el tipo del parámetro `x`");
 }
+
+#[test]
+fn salida_cerrada_no_es_un_panico() {
+    // `uwu programa.uwu | head -1`: el programa tiene que terminar en silencio
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    let dir = TempDir::new("salida_cerrada");
+    let path = dir.write("mucho.uwu", "import <io>;\nfor i in 0..1000000 { print(i); io::write(\"x\\n\"); }\n");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_uwu"))
+        .arg(&path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut first = String::new();
+    BufReader::new(child.stdout.take().unwrap()).read_line(&mut first).unwrap();
+    assert_eq!(first, "0\n");
+    // al salir de este punto se cerró el extremo de lectura del pipe
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "{:?}", out.status);
+    assert_eq!(String::from_utf8_lossy(&out.stderr), "");
+}

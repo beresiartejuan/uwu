@@ -152,3 +152,27 @@ fn acceder_a_campo_de_variante_requiere_match() {
     assert!(errors(r#"type F = { t: "a", x: number } | { t: "b" }; let f: F = { t: "b" }; print(f.x);"#)[0]
         .contains("no todas las variantes"));
 }
+
+#[test]
+fn los_objetos_conservan_sus_campos_literales() {
+    // sin anotar nada, `r` sigue siendo una unión discriminada
+    let code = r#"
+      type Res = { ok: true } | { ok: false, error: string };
+      fn falla(e: string): Res { { ok: false, error: e } }
+      fn probar(s: string) {
+          let r = match s { "a" => { ok: true }, _ => falla("no") };
+          match r { { ok: true } => print("bien"), { ok: false, error } => print(error) }
+      }
+      probar("a");
+      probar("b");
+      let xs = [{ tipo: "n", v: 1 }, { tipo: "s", v: "x" }];
+      for x in xs { match x { { tipo: "n", v } => print(v + 1), { tipo: "s", v } => print(v.upper()) } }
+      let ok = { ok: true };
+      let t: { ok: true } = ok;"#;
+    assert_eq!(exec(code), vec!["bien", "no", "2", "X"]);
+    // con `let mut` sobre un literal nuevo, los campos se pueden cambiar
+    assert_eq!(exec("let mut m = { ok: true, n: 1 }; m.ok = false; m.n = 5; print(m);"), vec!["{ ok: false, n: 5 }"]);
+    // pero una segunda referencia a un objeto existente no puede ensanchar su tipo
+    let e = errors("let o = { ok: true }; let mut alias = o; alias.ok = false;");
+    assert_eq!(e, vec!["tipos incompatibles: se esperaba `true`, se encontró `false`"]);
+}

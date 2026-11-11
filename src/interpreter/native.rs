@@ -89,7 +89,7 @@ fn exit_code(status: std::process::ExitStatus) -> f64 {
 fn salida<'p>(r: std::io::Result<Output>) -> Value<'p> {
     match r {
         Ok(o) => ok_val(vec![
-            ("codigo", Value::Num(exit_code(o.status))),
+            ("code", Value::Num(exit_code(o.status))),
             ("stdout", vstr(String::from_utf8_lossy(&o.stdout).into_owned())),
             ("stderr", vstr(String::from_utf8_lossy(&o.stderr).into_owned())),
         ]),
@@ -169,17 +169,17 @@ fn fecha_local(ts: f64) -> Fecha {
 fn fecha_val<'p>(f: Fecha) -> Value<'p> {
     let n = |x: i64| Value::Num(x as f64);
     vobj(vec![
-        ("anio", n(f.anio)),
-        ("mes", n(f.mes)),
-        ("dia", n(f.dia)),
-        ("hora", n(f.hora)),
-        ("minuto", n(f.minuto)),
-        ("segundo", n(f.segundo)),
-        ("dia_semana", n(f.dia_semana)),
+        ("year", n(f.anio)),
+        ("month", n(f.mes)),
+        ("day", n(f.dia)),
+        ("hour", n(f.hora)),
+        ("minute", n(f.minuto)),
+        ("second", n(f.segundo)),
+        ("weekday", n(f.dia_semana)),
     ])
 }
 
-/// Semilla inicial de `math::aleatorio`, tomada de /dev/urandom.
+/// Semilla inicial de `math::random`, tomada de /dev/urandom.
 pub(crate) fn initial_seed() -> u64 {
     let mut buf = [0u8; 8];
     let from_urandom = std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut buf)).is_ok();
@@ -263,26 +263,26 @@ impl<'p, 'o> Interpreter<'p, 'o> {
             }
 
             // ---------- <fs> ----------
-            FsLeer => {
+            FsRead => {
                 let ruta = self.arg_str(&args, 0, span)?;
                 Ok(match std::fs::read_to_string(&ruta) {
-                    Ok(contenido) => ok_val(vec![("contenido", vstr(contenido))]),
+                    Ok(contenido) => ok_val(vec![("content", vstr(contenido))]),
                     Err(e) => err_val(io_err(&e)),
                 })
             }
-            FsLeerLineas => {
+            FsReadLines => {
                 let ruta = self.arg_str(&args, 0, span)?;
                 Ok(match std::fs::read_to_string(&ruta) {
-                    Ok(contenido) => ok_val(vec![("lineas", varr(contenido.lines().map(vstr).collect()))]),
+                    Ok(contenido) => ok_val(vec![("lines", varr(contenido.lines().map(vstr).collect()))]),
                     Err(e) => err_val(io_err(&e)),
                 })
             }
-            FsEscribir => {
+            FsWrite => {
                 let ruta = self.arg_str(&args, 0, span)?;
                 let texto = self.arg_str(&args, 1, span)?;
                 Ok(unit_res(std::fs::write(&ruta, texto)))
             }
-            FsAgregar => {
+            FsAppend => {
                 let ruta = self.arg_str(&args, 0, span)?;
                 let texto = self.arg_str(&args, 1, span)?;
                 let r = std::fs::OpenOptions::new()
@@ -292,23 +292,23 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                     .and_then(|mut f| f.write_all(texto.as_bytes()));
                 Ok(unit_res(r))
             }
-            FsExiste => Ok(Value::Bool(Path::new(&self.arg_str(&args, 0, span)?).exists())),
-            FsEsDir => Ok(Value::Bool(Path::new(&self.arg_str(&args, 0, span)?).is_dir())),
-            FsEsArchivo => Ok(Value::Bool(Path::new(&self.arg_str(&args, 0, span)?).is_file())),
-            FsInfo => {
+            FsExists => Ok(Value::Bool(Path::new(&self.arg_str(&args, 0, span)?).exists())),
+            FsIsDir => Ok(Value::Bool(Path::new(&self.arg_str(&args, 0, span)?).is_dir())),
+            FsIsFile => Ok(Value::Bool(Path::new(&self.arg_str(&args, 0, span)?).is_file())),
+            FsStat => {
                 let ruta = self.arg_str(&args, 0, span)?;
                 Ok(match std::fs::symlink_metadata(&ruta) {
                     Ok(m) => ok_val(vec![
-                        ("tamano", Value::Num(m.len() as f64)),
-                        ("es_dir", Value::Bool(m.is_dir())),
-                        ("es_enlace", Value::Bool(m.file_type().is_symlink())),
-                        ("modificado", Value::Num(m.mtime() as f64)),
-                        ("permisos", Value::Num((m.mode() & 0o7777) as f64)),
+                        ("size", Value::Num(m.len() as f64)),
+                        ("is_dir", Value::Bool(m.is_dir())),
+                        ("is_symlink", Value::Bool(m.file_type().is_symlink())),
+                        ("modified", Value::Num(m.mtime() as f64)),
+                        ("permissions", Value::Num((m.mode() & 0o7777) as f64)),
                     ]),
                     Err(e) => err_val(io_err(&e)),
                 })
             }
-            FsListar => {
+            FsListDir => {
                 let ruta = self.arg_str(&args, 0, span)?;
                 Ok(match std::fs::read_dir(&ruta) {
                     Ok(entries) => {
@@ -317,13 +317,13 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                             .map(|e| e.file_name().to_string_lossy().into_owned())
                             .collect();
                         nombres.sort();
-                        ok_val(vec![("entradas", varr(nombres.into_iter().map(vstr).collect()))])
+                        ok_val(vec![("entries", varr(nombres.into_iter().map(vstr).collect()))])
                     }
                     Err(e) => err_val(io_err(&e)),
                 })
             }
-            FsCrearDir => Ok(unit_res(std::fs::create_dir_all(self.arg_str(&args, 0, span)?))),
-            FsBorrar => {
+            FsCreateDir => Ok(unit_res(std::fs::create_dir_all(self.arg_str(&args, 0, span)?))),
+            FsRemove => {
                 let ruta = self.arg_str(&args, 0, span)?;
                 let path = Path::new(&ruta);
                 // un enlace a un directorio se borra como enlace, sin tocar el directorio
@@ -331,17 +331,17 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 let r = if is_real_dir { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) };
                 Ok(unit_res(r))
             }
-            FsCopiar => {
+            FsCopy => {
                 let desde = self.arg_str(&args, 0, span)?;
                 let hasta = self.arg_str(&args, 1, span)?;
                 Ok(unit_res(std::fs::copy(&desde, &hasta).map(|_| ())))
             }
-            FsMover => {
+            FsRename => {
                 let desde = self.arg_str(&args, 0, span)?;
                 let hasta = self.arg_str(&args, 1, span)?;
                 Ok(unit_res(std::fs::rename(&desde, &hasta)))
             }
-            FsPermisos => {
+            FsSetPermissions => {
                 let ruta = self.arg_str(&args, 0, span)?;
                 let modo = self.arg_num(&args, 1, span)?;
                 if !(0.0..=4095.0).contains(&modo) || modo.fract() != 0.0 {
@@ -349,44 +349,44 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 }
                 Ok(unit_res(std::fs::set_permissions(&ruta, std::fs::Permissions::from_mode(modo as u32))))
             }
-            FsEnlazar => {
+            FsSymlink => {
                 let destino = self.arg_str(&args, 0, span)?;
                 let enlace = self.arg_str(&args, 1, span)?;
                 Ok(unit_res(std::os::unix::fs::symlink(&destino, &enlace)))
             }
 
             // ---------- <path> ----------
-            PathUnir => {
+            PathJoin => {
                 let a = self.arg_str(&args, 0, span)?;
                 let b2 = self.arg_str(&args, 1, span)?;
                 Ok(vstr(Path::new(&a).join(b2).to_string_lossy().into_owned()))
             }
-            PathNombre => Ok(vstr(path_str(Path::new(&self.arg_str(&args, 0, span)?).file_name()))),
-            PathBase => Ok(vstr(path_str(Path::new(&self.arg_str(&args, 0, span)?).file_stem()))),
+            PathFileName => Ok(vstr(path_str(Path::new(&self.arg_str(&args, 0, span)?).file_name()))),
+            PathStem => Ok(vstr(path_str(Path::new(&self.arg_str(&args, 0, span)?).file_stem()))),
             PathExtension => Ok(vstr(path_str(Path::new(&self.arg_str(&args, 0, span)?).extension()))),
-            PathPadre => {
+            PathParent => {
                 let ruta = self.arg_str(&args, 0, span)?;
                 let padre = Path::new(&ruta).parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
                 Ok(vstr(padre))
             }
-            PathAbsoluta => {
+            PathAbsolute => {
                 let ruta = self.arg_str(&args, 0, span)?;
                 Ok(match std::fs::canonicalize(&ruta) {
-                    Ok(p) => ok_val(vec![("ruta", vstr(p.to_string_lossy().into_owned()))]),
+                    Ok(p) => ok_val(vec![("path", vstr(p.to_string_lossy().into_owned()))]),
                     Err(e) => err_val(io_err(&e)),
                 })
             }
-            PathEsAbsoluta => Ok(Value::Bool(Path::new(&self.arg_str(&args, 0, span)?).is_absolute())),
+            PathIsAbsolute => Ok(Value::Bool(Path::new(&self.arg_str(&args, 0, span)?).is_absolute())),
 
             // ---------- <env> ----------
-            EnvObtener => {
+            EnvGet => {
                 let nombre = self.arg_str(&args, 0, span)?;
                 Ok(match std::env::var(&nombre) {
-                    Ok(valor) => ok_val(vec![("valor", vstr(valor))]),
+                    Ok(valor) => ok_val(vec![("value", vstr(valor))]),
                     Err(_) => none_val(),
                 })
             }
-            EnvDefinir => {
+            EnvSet => {
                 let nombre = self.arg_str(&args, 0, span)?;
                 let valor = self.arg_str(&args, 1, span)?;
                 if nombre.is_empty() || nombre.contains('=') || nombre.contains('\0') || valor.contains('\0') {
@@ -395,34 +395,34 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 std::env::set_var(nombre, valor);
                 Ok(Value::Unit)
             }
-            EnvBorrar => {
+            EnvRemove => {
                 let nombre = self.arg_str(&args, 0, span)?;
                 if !nombre.is_empty() && !nombre.contains('=') && !nombre.contains('\0') {
                     std::env::remove_var(nombre);
                 }
                 Ok(Value::Unit)
             }
-            EnvTodas => {
+            EnvVars => {
                 let mut vars: Vec<(String, String)> = std::env::vars_os()
                     .map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned()))
                     .collect();
                 vars.sort();
-                Ok(varr(vars.into_iter().map(|(k, v)| vobj(vec![("nombre", vstr(k)), ("valor", vstr(v))])).collect()))
+                Ok(varr(vars.into_iter().map(|(k, v)| vobj(vec![("name", vstr(k)), ("value", vstr(v))])).collect()))
             }
-            EnvActualDir => {
+            EnvCurrentDir => {
                 Ok(vstr(std::env::current_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()))
             }
-            EnvCambiarDir => Ok(unit_res(std::env::set_current_dir(self.arg_str(&args, 0, span)?))),
+            EnvChangeDir => Ok(unit_res(std::env::set_current_dir(self.arg_str(&args, 0, span)?))),
             EnvHome => Ok(vstr(std::env::var("HOME").unwrap_or_default())),
             EnvTempDir => Ok(vstr(std::env::temp_dir().to_string_lossy().into_owned())),
 
             // ---------- <proc> ----------
-            ProcEjecutar => {
+            ProcRun => {
                 let programa = self.arg_str(&args, 0, span)?;
                 let cmd_args = self.arg_strs(&args, 1);
                 Ok(salida(Command::new(&programa).args(&cmd_args).stdin(Stdio::null()).output()))
             }
-            ProcEjecutarEntrada => {
+            ProcRunWithInput => {
                 let programa = self.arg_str(&args, 0, span)?;
                 let cmd_args = self.arg_strs(&args, 1);
                 let entrada = self.arg_str(&args, 2, span)?;
@@ -450,7 +450,7 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 let comando = self.arg_str(&args, 0, span)?;
                 Ok(salida(Command::new("/bin/sh").arg("-c").arg(&comando).stdin(Stdio::null()).output()))
             }
-            ProcLanzar => {
+            ProcSpawn => {
                 let programa = self.arg_str(&args, 0, span)?;
                 let cmd_args = self.arg_strs(&args, 1);
                 Ok(match Command::new(&programa).args(&cmd_args).spawn() {
@@ -462,17 +462,17 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                     Err(e) => err_val(io_err(&e)),
                 })
             }
-            ProcEsperar => {
+            ProcWait => {
                 let pid = self.arg_num(&args, 0, span)? as u32;
                 let Some(mut child) = self.children.remove(&pid) else {
                     return Ok(err_val(format!("no hay ningún proceso lanzado con pid {}", pid)));
                 };
                 Ok(match child.wait() {
-                    Ok(status) => ok_val(vec![("codigo", Value::Num(exit_code(status)))]),
+                    Ok(status) => ok_val(vec![("code", Value::Num(exit_code(status)))]),
                     Err(e) => err_val(io_err(&e)),
                 })
             }
-            ProcMatar => {
+            ProcKill => {
                 let pid = self.arg_num(&args, 0, span)?;
                 let senal = self.arg_num(&args, 1, span)?;
                 if pid <= 0.0 || pid.fract() != 0.0 {
@@ -483,7 +483,7 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 let r = unsafe { sys::kill(pid as i32, senal as i32) };
                 Ok(if r == 0 { ok_val(vec![]) } else { err_val(io_err(&std::io::Error::last_os_error())) })
             }
-            ProcSalir => {
+            ProcExit => {
                 let code = match args.first() {
                     Some(Value::Num(n)) => *n as i32,
                     _ => 0,
@@ -496,53 +496,57 @@ impl<'p, 'o> Interpreter<'p, 'o> {
             ProcPpid => num(std::os::unix::process::parent_id() as f64),
 
             // ---------- <io> ----------
-            IoLeerLinea => {
+            IoReadLine => {
                 let mut linea = String::new();
                 Ok(match std::io::stdin().read_line(&mut linea) {
                     Ok(0) | Err(_) => none_val(),
                     Ok(_) => {
                         let linea = linea.strip_suffix('\n').unwrap_or(&linea);
                         let linea = linea.strip_suffix('\r').unwrap_or(linea);
-                        ok_val(vec![("linea", vstr(linea.to_string()))])
+                        ok_val(vec![("line", vstr(linea.to_string()))])
                     }
                 })
             }
-            IoLeerTodo => {
+            IoReadAll => {
                 let mut todo = String::new();
                 let _ = std::io::stdin().read_to_string(&mut todo);
                 Ok(vstr(todo))
             }
-            IoEscribir => {
+            IoWrite => {
                 let texto = self.arg_str(&args, 0, span)?;
                 let mut stdout = std::io::stdout();
-                let _ = stdout.write_all(texto.as_bytes());
-                let _ = stdout.flush();
+                if let Err(e) = stdout.write_all(texto.as_bytes()).and_then(|_| stdout.flush()) {
+                    // igual que `print`: si se cerró la salida (`| head`), el programa termina en silencio
+                    if e.kind() == std::io::ErrorKind::BrokenPipe {
+                        std::process::exit(0);
+                    }
+                }
                 Ok(Value::Unit)
             }
-            IoError => {
+            IoWriteErr => {
                 let texto = self.arg_str(&args, 0, span)?;
                 let mut stderr = std::io::stderr();
                 let _ = stderr.write_all(texto.as_bytes());
                 let _ = stderr.flush();
                 Ok(Value::Unit)
             }
-            IoEsTerminal => Ok(Value::Bool(std::io::stdout().is_terminal())),
+            IoIsTerminal => Ok(Value::Bool(std::io::stdout().is_terminal())),
 
             // ---------- <time> ----------
-            TimeAhora | TimeAhoraMs => {
+            TimeNow | TimeNowMs => {
                 let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-                num(if b == TimeAhora { d.as_secs_f64() } else { d.as_millis() as f64 })
+                num(if b == TimeNow { d.as_secs_f64() } else { d.as_millis() as f64 })
             }
-            TimeReloj => num(self.start.elapsed().as_secs_f64()),
-            TimeDormir => {
+            TimeElapsed => num(self.start.elapsed().as_secs_f64()),
+            TimeSleep => {
                 let secs = self.arg_num(&args, 0, span)?;
                 if secs.is_finite() && secs > 0.0 {
                     std::thread::sleep(std::time::Duration::from_secs_f64(secs));
                 }
                 Ok(Value::Unit)
             }
-            TimeFecha => Ok(fecha_val(fecha_utc(self.arg_num(&args, 0, span)?))),
-            TimeFechaLocal => Ok(fecha_val(fecha_local(self.arg_num(&args, 0, span)?))),
+            TimeDate => Ok(fecha_val(fecha_utc(self.arg_num(&args, 0, span)?))),
+            TimeLocalDate => Ok(fecha_val(fecha_local(self.arg_num(&args, 0, span)?))),
             TimeIso => {
                 let f = fecha_utc(self.arg_num(&args, 0, span)?);
                 Ok(vstr(format!(
@@ -552,9 +556,9 @@ impl<'p, 'o> Interpreter<'p, 'o> {
             }
 
             // ---------- <os> ----------
-            OsNombre => Ok(vstr(std::env::consts::OS)),
-            OsArquitectura => Ok(vstr(std::env::consts::ARCH)),
-            OsUsuario => Ok(vstr(std::env::var("USER").or_else(|_| std::env::var("LOGNAME")).unwrap_or_default())),
+            OsName => Ok(vstr(std::env::consts::OS)),
+            OsArch => Ok(vstr(std::env::consts::ARCH)),
+            OsUser => Ok(vstr(std::env::var("USER").or_else(|_| std::env::var("LOGNAME")).unwrap_or_default())),
             OsHostname => {
                 let h = proc_file("/proc/sys/kernel/hostname");
                 Ok(vstr(if h.is_empty() { proc_file("/etc/hostname") } else { h }))
@@ -563,7 +567,7 @@ impl<'p, 'o> Interpreter<'p, 'o> {
             // SAFETY: getuid(2) no puede fallar ni toca memoria.
             OsUid => num(unsafe { sys::getuid() } as f64),
             OsCpus => num(std::thread::available_parallelism().map_or(1, |n| n.get()) as f64),
-            OsMemoria => {
+            OsMemory => {
                 let meminfo = proc_file("/proc/meminfo");
                 let campo = |nombre: &str| -> f64 {
                     meminfo
@@ -575,14 +579,14 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 };
                 Ok(vobj(vec![
                     ("total", Value::Num(campo("MemTotal:"))),
-                    ("disponible", Value::Num(campo("MemAvailable:"))),
+                    ("available", Value::Num(campo("MemAvailable:"))),
                 ]))
             }
             OsUptime => {
                 let up = proc_file("/proc/uptime");
                 num(up.split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0.0))
             }
-            OsCarga => {
+            OsLoadAvg => {
                 let load = proc_file("/proc/loadavg");
                 let vals: Vec<Value<'p>> =
                     load.split_whitespace().take(3).map(|s| Value::Num(s.parse().unwrap_or(0.0))).collect();
@@ -604,16 +608,16 @@ impl<'p, 'o> Interpreter<'p, 'o> {
             MathExp => num(self.arg_num(&args, 0, span)?.exp()),
             MathLn => num(self.arg_num(&args, 0, span)?.ln()),
             MathLog10 => num(self.arg_num(&args, 0, span)?.log10()),
-            MathAleatorio => num(self.next_random()),
-            MathAleatorioEntre => {
+            MathRandom => num(self.next_random()),
+            MathRandomRange => {
                 let a = self.arg_num(&args, 0, span)?.ceil();
                 let z = self.arg_num(&args, 1, span)?.floor();
                 if z < a {
-                    return Err(rt(format!("math::aleatorio_entre: el rango {}..={} está vacío", a, z), span));
+                    return Err(rt(format!("math::random_range: el rango {}..={} está vacío", a, z), span));
                 }
                 num(a + (self.next_random() * (z - a + 1.0)).floor())
             }
-            MathSemilla => {
+            MathSeed => {
                 let s = self.arg_num(&args, 0, span)?;
                 self.rng = (s as i64 as u64) ^ 0x9E37_79B9_7F4A_7C15;
                 if self.rng == 0 {

@@ -298,6 +298,19 @@ pub fn widen(t: &Type) -> Type {
     }
 }
 
+/// Como `widen`, pero conserva los campos literales de los objetos: son los
+/// discriminantes de las uniones (`{ ok: true } | { ok: false, error: string }`).
+/// Se usa donde el valor no se puede modificar, así que el literal sigue siendo cierto.
+pub fn widen_value(t: &Type) -> Type {
+    match t {
+        Type::Lit(v) => base_of(v),
+        Type::Array(elem) => arr(widen_value(elem)),
+        Type::Tuple(items) => Type::Tuple(items.iter().map(widen_value).collect()),
+        Type::Union(members) => mk_union(members.iter().map(widen_value).collect()),
+        _ => t.clone(),
+    }
+}
+
 pub fn has_never_array(t: &Type) -> bool {
     match t {
         Type::Array(elem) => matches!(**elem, Type::Never) || has_never_array(elem),

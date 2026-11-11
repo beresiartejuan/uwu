@@ -8,7 +8,7 @@ use crate::syntax::ast::*;
 use crate::syntax::Span;
 use crate::types::{
     alias_key, arr, clean_name, contains_param, has_never_array, is_fresh, lit, mk_union, obj_get, param, print, subst,
-    t_fn, t_fn_gen, t_obj, widen, Alias, Type, TypeCtx, BOOLEAN, ERR, NEVER, NUMBER, RANGE, STRING, VOID,
+    t_fn, t_fn_gen, t_obj, widen, widen_value, Alias, Type, TypeCtx, BOOLEAN, ERR, NEVER, NUMBER, RANGE, STRING, VOID,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -20,6 +20,8 @@ mod stmt;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum VarKind {
     Var,
+    /// La variable de un `for`: se hace mutable con `for let x in ...`.
+    LoopVar,
     Fn,
     Builtin,
     /// Traído con `import` desde otro archivo.
@@ -102,6 +104,10 @@ fn type_hint(name: &str) -> Option<&'static str> {
 }
 
 const MUTATING_METHODS: &[&str] = &["push", "pop"];
+
+/// Métodos cuyos últimos parámetros se pueden omitir: (método, cuántos).
+/// `xs.slice(2)` es lo mismo que `xs.slice(2, xs.len())`.
+const OPTIONAL_ARGS: &[(&str, usize)] = &[("slice", 1)];
 
 #[derive(Clone)]
 pub struct Checker {

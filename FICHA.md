@@ -103,8 +103,16 @@ en varios archivos (`impl Checker` / `impl Interpreter` en cada uno):
   valores (closures) los referencian hasta el final de la sesión. Cada entrada
   recibe un índice de archivo nuevo (`modules::load(.., first_file)`) para que
   los ids del parser no se repitan.
+- **Tipos literales**: `types::widen` ensancha todo (`{ ok: true }` → `{ ok: boolean }`)
+  y se usa en `let mut` sobre valores nuevos; `widen_value` sólo ensancha los
+  primitivos y los elementos de arreglos y tuplas, y se usa en `let`, en los
+  arreglos literales y al inferir genéricos. `let mut q = p` usa `widen_value`
+  porque `q` es otra referencia al mismo objeto.
+- **Closures con patrones**: `ParamNode.pattern` guarda el patrón y `name` es un
+  nombre interno (`#0`) que no choca con ninguna variable. En ejecución,
+  `call_value` desestructura el argumento con el mismo `bind` de `let`.
 - **Agregar una función a la stdlib**: (1) una variante en `BuiltinFn`, (2) una
-  entrada en `MODULES`, (3) su tipo en `builtin_type`, (4) la implementación en
+  entrada en `MODULES` (con nombre en inglés), (3) su tipo en `builtin_type`, (4) la implementación en
   `interpreter/native.rs` y (5) un test en `tests/uwu/stdlib.rs` y su línea en `docs/stdlib.md`.
 
 ## 4. Decisiones tomadas
@@ -118,10 +126,12 @@ en varios archivos (`impl Checker` / `impl Interpreter` en cada uno):
 | Módulos | Sintaxis de C++20 (`import <x>;`, `export fn`, `export module`), con nombres exportados directo en el ámbito. |
 | Namespaces | Como en C++: `export namespace geo { ... }` exporta todo lo de adentro; se usan con `geo::` o `using`. |
 | Tuplas | Las de Rust (`(a, b)`, `t.0`), no las de TS (`[a, b]`): los corchetes quedan para los arreglos. |
+| Mutabilidad en `for` | `for let x in xs` hace mutable a `x` (y a todas las variables de un patrón); `for mut x` es un error con pista. |
+| Tipos literales | `let` conserva los campos literales de los objetos (`{ ok: true }`), así las uniones discriminadas no se pierden; `let mut` sobre un literal nuevo los ensancha (`{ ok: boolean }`). |
 | Interpolación | `"{expr}"` en cualquier string, con `{{` / `}}` como escape, igual que `format!`. |
 | Biblioteca estándar | Con prefijo `::` como `std::` en C++, e importación explícita. |
 | Prelude | `print`, `panic` y `assert` no necesitan `import`. |
-| Idioma | Palabras clave en inglés, igual que Rust; biblioteca estándar, mensajes y docs en castellano rioplatense. |
+| Idioma | Palabras clave y biblioteca estándar en inglés, igual que Rust (`fs::read`, `proc::run`); mensajes de error y docs en castellano rioplatense. Los nombres viejos de la stdlib (`fs::leer`) dan una pista con el nuevo. |
 | Plataforma | Linux primero. |
 
 ## 5. Historia
@@ -138,7 +148,7 @@ Ver [CHANGELOG.md](CHANGELOG.md).
 
 - Narrowing en `if` (`if f.tipo == "circulo" { f.radio }`).
 - `impl` para asociar métodos a tipos.
-- Patrones con `|` en `match` y desestructuración en los parámetros de closures (`|(a, b)| ...`).
+- Patrones con `|` en `match` y desestructuración en los parámetros de funciones (`fn f((a, b): (number, number))`).
 - Historial y autocompletado en el REPL (hoy se lee la línea a mano, sin dependencias).
 - Namespaces anidados (`a::b::c`).
 - Biblioteca estándar en macOS y Windows (lo específico de Linux está en `interpreter/native.rs`:

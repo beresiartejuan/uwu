@@ -46,6 +46,18 @@ let x = "ahora texto";  // shadowing: una nueva variable con el mismo nombre
 Modificar una variable inmutable es un error de compilación, también a través
 de sus campos (`o.a = 1`) o métodos que la cambian (`v.push(1)`).
 
+Sin anotación, `let x = 5` tiene tipo `number`, no `5`. En los objetos depende
+de si se pueden modificar:
+
+```rust
+let r = { ok: true };          // { ok: true }: los campos no cambian, el literal se conserva
+let mut m = { ok: true };      // { ok: boolean }: se puede hacer `m.ok = false`
+```
+
+Así una unión discriminada como `{ ok: true } | { ok: false, error: string }`
+sigue siéndolo aunque no se anote el tipo. `let mut q = p;` no ensancha el tipo
+de `p`, porque `q` es otra referencia al mismo objeto.
+
 ## Tipos
 
 | Tipo | Ejemplos |
@@ -144,6 +156,9 @@ total += 1;
 for (i, letra) in ["a", "b"].enumerate() {
     print(i, letra);
 }
+
+[(1, "a"), (2, "b")].map(|(n, s)| s.repeat(n));     // también en closures
+let area = |{ ancho, alto }: { ancho: number, alto: number }| ancho * alto;
 ```
 
 El patrón tiene que coincidir **siempre**: `let (0, x) = t;` es un error,
@@ -191,7 +206,13 @@ for i in 0..10 { }          // rango, sin incluir el 10
 for x in [1, 2, 3] { }      // arreglo
 for c in "hola" { }         // caracteres de un string
 for (i, x) in xs.enumerate() { }   // con desestructuración
+for let t in tareas { t.hecha = true; }   // `let`: la variable es mutable
+for let (i, t) in tareas.enumerate() { }  // todas las variables del patrón son mutables
 ```
+
+La variable del `for` es inmutable. Con `for let x in ...` se puede modificar,
+como cualquier `let mut`. Los objetos se comparten por referencia, así que
+`t.hecha = true` cambia el elemento del arreglo.
 
 `return` sale de la función actual. `break` y `continue` fuera de un bucle son
 errores de compilación.
@@ -221,6 +242,7 @@ mas5(10);                           // 15
 
 let doble = |x: number| x * 2;      // tipo explícito
 [1, 2].map(|x| x * 2);              // tipo inferido por el contexto
+xs.enumerate().map(|(i, x)| i * x); // desestructurando el argumento
 ```
 
 ## Genéricos
@@ -261,8 +283,8 @@ primero hay que distinguirlas con `match`.
 
 | Tipo | Métodos |
 |---|---|
-| `T[]` | `len()` `is_empty()` `push(x)` `pop()` `contains(x)` `index_of(x)` `reverse()` `slice(a, b)` `sort()` `join(sep)` `map(f)` `filter(f)` `any(f)` `all(f)` `fold(inicial, f)` `sum()` `enumerate()` `zip(otro)` |
-| `string` | `len()` `is_empty()` `upper()` `lower()` `trim()` `contains(s)` `starts_with(s)` `ends_with(s)` `index_of(s)` `split(sep)` `lines()` `chars()` `slice(a, b)` `replace(de, a)` `repeat(n)` `to_number()` |
+| `T[]` | `len()` `is_empty()` `push(x)` `pop()` `contains(x)` `index_of(x)` `reverse()` `slice(desde, hasta?)` `sort()` `join(sep)` `map(f)` `filter(f)` `any(f)` `all(f)` `fold(inicial, f)` `sum()` `enumerate()` `zip(otro)` |
+| `string` | `len()` `is_empty()` `upper()` `lower()` `trim()` `contains(s)` `starts_with(s)` `ends_with(s)` `index_of(s)` `split(sep)` `lines()` `chars()` `slice(desde, hasta?)` `replace(de, a)` `repeat(n)` `to_number()` |
 | `number` | `to_string()` `to_base(b)` `abs()` `floor()` `ceil()` `round()` `sqrt()` `pow(n)` `min(n)` `max(n)` |
 | `boolean` | `to_string()` |
 | rango | `to_array()` |
@@ -273,6 +295,7 @@ Detalles:
   `sort` y `slice` devuelven uno nuevo.
 - `sort` sólo existe para arreglos de `number` o de `string`. `sum` sólo para `number`.
 - `slice` acepta índices negativos, que cuentan desde el final: `"hola".slice(-2, 4)` → `"la"`.
+  Si se omite `hasta`, llega hasta el final: `"hola mundo".slice(5)` → `"mundo"`.
 - `len`, `index_of` y `slice` en strings cuentan caracteres, no bytes.
 - `"42".to_number()` devuelve `{ ok: true, valor: number } | { ok: false }`.
 - `255.to_base(16)` → `"ff"`; la base va de 2 a 36.

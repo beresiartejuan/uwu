@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn stdlib_requiere_import() {
-    let r = uwu::run("print(fs::existe(\"/\"));", &mut |_| {}, true, &[]);
+    let r = uwu::run("print(fs::exists(\"/\"));", &mut |_| {}, true, &[]);
     let d = &r.diagnostics[0];
     assert_eq!(d.message, "la biblioteca `fs` no está importada");
     assert_eq!(d.hint.as_deref(), Some("agregá `import <fs>;` al principio del archivo"));
@@ -31,8 +31,15 @@ fn stdlib_inexistente() {
 
 #[test]
 fn stdlib_miembro_inexistente_sugiere() {
-    let r = uwu::run("import <fs>; fs::leeer(\"x\");", &mut |_| {}, true, &[]);
-    assert_eq!(r.diagnostics[0].hint.as_deref(), Some("¿quisiste decir `fs::leer`?"));
+    let r = uwu::run("import <fs>; fs::raed(\"x\");", &mut |_| {}, true, &[]);
+    assert_eq!(r.diagnostics[0].hint.as_deref(), Some("¿quisiste decir `fs::read`?"));
+}
+
+#[test]
+fn stdlib_nombres_viejos_en_castellano_dan_pista() {
+    let r = uwu::run("import <proc>; proc::ejecutar(\"ls\", []);", &mut |_| {}, true, &[]);
+    assert_eq!(r.diagnostics[0].message, "la biblioteca `proc` no tiene `ejecutar`");
+    assert_eq!(r.diagnostics[0].hint.as_deref(), Some("ahora se llama `proc::run`"));
 }
 
 #[test]
@@ -51,8 +58,8 @@ fn using_namespace_y_using_declaracion() {
 #[test]
 fn stdlib_funciones_como_valores() {
     assert_eq!(
-        exec("import <path>; let f = path::nombre; print(f(\"/a/b.txt\"), f);"),
-        vec!["b.txt <fn path::nombre>"]
+        exec("import <path>; let f = path::file_name; print(f(\"/a/b.txt\"), f);"),
+        vec!["b.txt <fn path::file_name>"]
     );
 }
 
@@ -65,21 +72,21 @@ fn stdlib_fs_escribir_leer_borrar() {
         r#"
         import <fs>;
         import <path>;
-        let dir = path::unir("{dir}", "sub");
-        let ruta = path::unir(dir, "nota.txt");
-        fs::crear_dir(dir);
-        match fs::escribir(ruta, "hola\n") {{
+        let dir = path::join("{dir}", "sub");
+        let ruta = path::join(dir, "nota.txt");
+        fs::create_dir(dir);
+        match fs::write(ruta, "hola\n") {{
             {{ ok: true }} => print("escrito"),
             {{ ok: false, error }} => print("error:", error),
         }}
-        fs::agregar(ruta, "chau\n");
-        match fs::leer_lineas(ruta) {{
-            {{ ok: true, lineas }} => print(lineas),
+        fs::append(ruta, "chau\n");
+        match fs::read_lines(ruta) {{
+            {{ ok: true, lines }} => print(lines),
             {{ ok: false, error }} => print("error:", error),
         }}
-        print(fs::existe(ruta), fs::es_archivo(ruta), fs::es_dir(dir));
-        fs::borrar(dir);
-        print(fs::existe(ruta));
+        print(fs::exists(ruta), fs::is_file(ruta), fs::is_dir(dir));
+        fs::remove(dir);
+        print(fs::exists(ruta));
         "#,
         dir = t.path(),
     );
@@ -94,19 +101,19 @@ fn stdlib_fs_info_permisos_y_enlaces() {
         import <fs>;
         let ruta = "{dir}/x.sh";
         let enlace = "{dir}/enlace";
-        fs::escribir(ruta, "12345");
-        fs::permisos(ruta, 0o750);
-        match fs::info(ruta) {{
-            {{ ok: true, tamano, permisos, es_enlace }} => print(tamano, permisos == 0o750, es_enlace),
+        fs::write(ruta, "12345");
+        fs::set_permissions(ruta, 0o750);
+        match fs::stat(ruta) {{
+            {{ ok: true, size, permissions, is_symlink }} => print(size, permissions == 0o750, is_symlink),
             {{ ok: false, error }} => print(error),
         }}
-        fs::enlazar(ruta, enlace);
-        match fs::info(enlace) {{
-            {{ ok: true, es_enlace }} => print("enlace:", es_enlace),
+        fs::symlink(ruta, enlace);
+        match fs::stat(enlace) {{
+            {{ ok: true, is_symlink }} => print("enlace:", is_symlink),
             {{ ok: false, error }} => print(error),
         }}
-        match fs::listar("{dir}") {{
-            {{ ok: true, entradas }} => print(entradas),
+        match fs::list_dir("{dir}") {{
+            {{ ok: true, entries }} => print(entries),
             {{ ok: false, error }} => print(error),
         }}
         "#,
@@ -120,8 +127,8 @@ fn stdlib_fs_errores_en_castellano() {
     let out = exec(
         r#"
         import <fs>;
-        match fs::leer("/ruta/que/no/existe/para/uwu") {
-            { ok: true, contenido } => print(contenido),
+        match fs::read("/ruta/que/no/existe/para/uwu") {
+            { ok: true, content } => print(content),
             { ok: false, error } => print(error),
         }"#,
     );
@@ -134,10 +141,10 @@ fn stdlib_path() {
         r#"
         import <path>;
         let r = "/home/juan/fotos/playa.jpg";
-        print(path::nombre(r), path::base(r), path::extension(r), path::padre(r));
-        print(path::unir("/tmp", "x.txt"), path::es_absoluta(r), path::es_absoluta("rel/a"), path::SEPARADOR);
-        match path::absoluta("/") {
-            { ok: true, ruta } => print(ruta),
+        print(path::file_name(r), path::stem(r), path::extension(r), path::parent(r));
+        print(path::join("/tmp", "x.txt"), path::is_absolute(r), path::is_absolute("rel/a"), path::SEPARATOR);
+        match path::absolute("/") {
+            { ok: true, path: abs } => print(abs),
             { ok: false, error } => print(error),
         }"#,
     );
@@ -149,15 +156,15 @@ fn stdlib_env() {
     let out = exec(
         r#"
         import <env>;
-        env::definir("UWU_TEST_VAR", "42");
-        match env::obtener("UWU_TEST_VAR") {
-            { ok: true, valor } => print("valor:", valor),
+        env::set("UWU_TEST_VAR", "42");
+        match env::get("UWU_TEST_VAR") {
+            { ok: true, value } => print("valor:", value),
             { ok: false } => print("no está"),
         }
-        print(env::todas().any(|v| v.nombre == "UWU_TEST_VAR"));
-        env::borrar("UWU_TEST_VAR");
-        match env::obtener("UWU_TEST_VAR") {
-            { ok: true, valor } => print(valor),
+        print(env::vars().any(|v| v.name == "UWU_TEST_VAR"));
+        env::remove("UWU_TEST_VAR");
+        match env::get("UWU_TEST_VAR") {
+            { ok: true, value } => print(value),
             { ok: false } => print("no está"),
         }
         print(env::temp_dir().len() > 0);"#,
@@ -170,19 +177,19 @@ fn stdlib_proc() {
     let out = exec(
         r#"
         import <proc>;
-        match proc::ejecutar("echo", ["hola", "uwu"]) {
-            { ok: true, codigo, stdout } => print(stdout.trim(), codigo),
+        match proc::run("echo", ["hola", "uwu"]) {
+            { ok: true, code, stdout } => print(stdout.trim(), code),
             { ok: false, error } => print("error:", error),
         }
-        match proc::ejecutar("/programa/inexistente/uwu", []) {
-            { ok: true, codigo } => print(codigo),
+        match proc::run("/programa/inexistente/uwu", []) {
+            { ok: true, code } => print(code),
             { ok: false, error } => print("no se pudo ejecutar"),
         }
         match proc::shell("echo $((6 * 7)); exit 3") {
-            { ok: true, codigo, stdout } => print(stdout.trim(), codigo),
+            { ok: true, code, stdout } => print(stdout.trim(), code),
             { ok: false, error } => print(error),
         }
-        match proc::ejecutar_entrada("tr", ["a-z", "A-Z"], "gritar") {
+        match proc::run_with_input("tr", ["a-z", "A-Z"], "gritar") {
             { ok: true, stdout } => print(stdout),
             { ok: false, error } => print(error),
         }
@@ -196,18 +203,18 @@ fn stdlib_proc_lanzar_matar_esperar() {
     let out = exec(
         r#"
         import <proc>;
-        match proc::lanzar("sleep", ["30"]) {
+        match proc::spawn("sleep", ["30"]) {
             { ok: true, pid } => {
-                proc::matar(pid, proc::SIGTERM);
-                match proc::esperar(pid) {
-                    { ok: true, codigo } => print("código:", codigo),
+                proc::kill(pid, proc::SIGTERM);
+                match proc::wait(pid) {
+                    { ok: true, code } => print("código:", code),
                     { ok: false, error } => print(error),
                 }
             }
             { ok: false, error } => print(error),
         }
-        match proc::esperar(1) {
-            { ok: true, codigo } => print(codigo),
+        match proc::wait(1) {
+            { ok: true, code } => print(code),
             { ok: false, error } => print(error),
         }"#,
     );
@@ -219,14 +226,14 @@ fn stdlib_time() {
     let out = exec(
         r#"
         import <time>;
-        let f = time::fecha(1700000000);
-        print(f.anio, f.mes, f.dia, f.hora, f.minuto, f.segundo, f.dia_semana);
+        let f = time::date(1700000000);
+        print(f.year, f.month, f.day, f.hour, f.minute, f.second, f.weekday);
         print(time::iso(0), time::iso(951782400));
-        let antes = time::reloj();
-        time::dormir(0.01);
-        print(time::reloj() - antes >= 0.01, time::ahora() > 1700000000, time::ahora_ms() > 1700000000000);
-        let l = time::fecha_local(time::ahora());
-        print(l.anio >= 2024);"#,
+        let antes = time::elapsed();
+        time::sleep(0.01);
+        print(time::elapsed() - antes >= 0.01, time::now() > 1700000000, time::now_ms() > 1700000000000);
+        let l = time::local_date(time::now());
+        print(l.year >= 2024);"#,
     );
     assert_eq!(
         out,
@@ -239,10 +246,10 @@ fn stdlib_os() {
     let out = exec(
         r#"
         import <os>;
-        print(os::nombre(), os::arquitectura().len() > 0, os::kernel().len() > 0);
-        print(os::cpus() >= 1, os::uid() >= 0, os::uptime() > 0, os::carga().len());
-        let m = os::memoria();
-        print(m.total > 0, m.disponible <= m.total);"#,
+        print(os::name(), os::arch().len() > 0, os::kernel().len() > 0);
+        print(os::cpus() >= 1, os::uid() >= 0, os::uptime() > 0, os::load_avg().len());
+        let m = os::memory();
+        print(m.total > 0, m.available <= m.total);"#,
     );
     assert_eq!(out, vec!["linux true true", "true true true 3", "true true"]);
 }
@@ -254,14 +261,14 @@ fn stdlib_math() {
         import <math>;
         print(math::sin(0), math::cos(0), math::exp(0), math::ln(math::E), math::log10(1000));
         print((math::atan2(1, 1) * 4 - math::PI).abs() < 0.0000001);
-        math::semilla(7);
-        let a = [math::aleatorio(), math::aleatorio()];
-        math::semilla(7);
-        let b = [math::aleatorio(), math::aleatorio()];
+        math::seed(7);
+        let a = [math::random(), math::random()];
+        math::seed(7);
+        let b = [math::random(), math::random()];
         print(a == b, a[0] >= 0 && a[0] < 1);
         let mut ok = true;
         for i in 0..200 {
-            let d = math::aleatorio_entre(1, 6);
+            let d = math::random_range(1, 6);
             if d < 1 || d > 6 || d != d.floor() { ok = false; }
         }
         print(ok);"#,

@@ -68,7 +68,7 @@ pub enum Expr {
         name: String,
         span: Span,
     },
-    /// `fs::leer`: un miembro de una biblioteca estándar importada.
+    /// `fs::read`: un miembro de una biblioteca estándar importada.
     Path {
         ns: String,
         name: String,
@@ -259,7 +259,7 @@ pub enum Stmt {
     Type(TypeDecl),
     Import(ImportDecl),
     Namespace(NamespaceDecl),
-    /// `using namespace fs;` (name = None) o `using fs::leer;` (name = Some).
+    /// `using namespace fs;` (name = None) o `using fs::read;` (name = Some).
     Using {
         ns: String,
         name: Option<String>,
@@ -315,6 +315,9 @@ pub struct NamespaceDecl {
 pub struct ParamNode {
     pub name: String,
     pub ty: Option<TypeNode>,
+    /// `|(a, b)| ...`: el parámetro se desestructura. `name` es entonces un nombre
+    /// interno (`#0`, `#1`...) que no choca con ninguna variable.
+    pub pattern: Option<Pattern>,
     pub span: Span,
 }
 
@@ -362,6 +365,26 @@ impl Pattern {
     }
 
     /// Las variables que declara el patrón, en orden.
+    /// ¿Alguna variable del patrón tiene `mut`?
+    pub fn has_mut(&self) -> bool {
+        match self {
+            Pattern::Bind { mutable, .. } => *mutable,
+            Pattern::Tuple { items, .. } => items.iter().any(Pattern::has_mut),
+            Pattern::Object { fields, .. } => fields.iter().any(|(_, p)| p.has_mut()),
+            Pattern::Wild { .. } | Pattern::Lit { .. } => false,
+        }
+    }
+
+    /// Hace mutables todas las variables del patrón (`for let (a, b) in ...`).
+    pub fn make_mut(&mut self) {
+        match self {
+            Pattern::Bind { mutable, .. } => *mutable = true,
+            Pattern::Tuple { items, .. } => items.iter_mut().for_each(Pattern::make_mut),
+            Pattern::Object { fields, .. } => fields.iter_mut().for_each(|(_, p)| p.make_mut()),
+            Pattern::Wild { .. } | Pattern::Lit { .. } => {}
+        }
+    }
+
     pub fn names(&self) -> Vec<&str> {
         match self {
             Pattern::Bind { name, .. } => vec![name],

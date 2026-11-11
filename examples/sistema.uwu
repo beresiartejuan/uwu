@@ -10,46 +10,46 @@ import <proc>;
 import <time>;
 import <os>;
 
-print("sistema:", os::nombre(), os::arquitectura(), "| kernel", os::kernel());
-print("usuario:", os::usuario(), "| cpus:", os::cpus());
+print("sistema:", os::name(), os::arch(), "| kernel", os::kernel());
+print("usuario:", os::user(), "| cpus:", os::cpus());
 
-let mem = os::memoria();
+let mem = os::memory();
 let gib = 1024 * 1024 * 1024;
-print("memoria disponible:", (mem.disponible / gib * 10).round() / 10, "GiB de", (mem.total / gib).round());
+print("memoria disponible:", (mem.available / gib * 10).round() / 10, "GiB de", (mem.total / gib).round());
 
 // Variables de entorno
-match env::obtener("SHELL") {
-    { ok: true, valor } => print("shell:", path::nombre(valor)),
+match env::get("SHELL") {
+    { ok: true, value } => print("shell:", path::file_name(value)),
     { ok: false } => print("SHELL no está definida"),
 }
 
 // Archivos
-let ruta = path::unir(env::temp_dir(), "uwu_demo.txt");
-match fs::escribir(ruta, "hola desde uwu\nsegunda línea\n") {
+let ruta = path::join(env::temp_dir(), "uwu_demo.txt");
+match fs::write(ruta, "hola desde uwu\nsegunda línea\n") {
     { ok: true } => print("escrito", ruta),
     { ok: false, error } => print("error al escribir:", error),
 }
 
-match fs::leer_lineas(ruta) {
-    { ok: true, lineas } => print("líneas:", lineas.len(), "→", lineas[0]),
+match fs::read_lines(ruta) {
+    { ok: true, lines } => print("líneas:", lines.len(), "→", lines[0]),
     { ok: false, error } => print("error al leer:", error),
 }
 
-match fs::info(ruta) {
-    { ok: true, tamano, permisos } => print("tamaño:", tamano, "bytes, permisos:", permisos.to_base(8)),
+match fs::stat(ruta) {
+    { ok: true, size, permissions } => print("tamaño:", size, "bytes, permisos:", permissions.to_base(8)),
     { ok: false, error } => print(error),
 }
 
-fs::borrar(ruta);
-print("¿existe todavía?", fs::existe(ruta));
+fs::remove(ruta);
+print("¿existe todavía?", fs::exists(ruta));
 
 // Procesos
 match proc::shell("uname -s && echo $$") {
-    { ok: true, codigo, stdout } => print("shell dijo:", stdout.lines().join(" / "), "(código", codigo.to_string() + ")"),
+    { ok: true, code, stdout } => print("shell dijo:", stdout.lines().join(" / "), "(código", code.to_string() + ")"),
     { ok: false, error } => print("no se pudo ejecutar:", error),
 }
 
 // Tiempo
-let ahora = time::ahora();
-let f = time::fecha_local(ahora);
-print("hoy es", f.dia.to_string() + "/" + f.mes + "/" + f.anio, "| UTC:", time::iso(ahora));
+let ahora = time::now();
+let f = time::local_date(ahora);
+print("hoy es", f.day.to_string() + "/" + f.month + "/" + f.year, "| UTC:", time::iso(ahora));

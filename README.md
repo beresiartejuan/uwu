@@ -19,8 +19,8 @@ fn area(f: Figura): number {
     }
 }
 
-match fs::leer("figuras.txt") {
-    { ok: true, contenido } => print(contenido),
+match fs::read("figuras.txt") {
+    { ok: true, content } => print(content),
     { ok: false, error } => print("no se pudo leer:", error),
 }
 ```
@@ -235,7 +235,7 @@ match proc::shell("ls /tmp | wc -l") {
     { ok: true, stdout } => print("archivos en /tmp:", stdout.trim()),
     { ok: false, error } => print("falló:", error),
 }
-print("hoy:", time::iso(time::ahora()));
+print("hoy:", time::iso(time::now()));
 ```
 
 | Biblioteca | Para qué |
@@ -282,6 +282,7 @@ error: la función `doble` debe devolver `number`, pero su cuerpo no produce un 
   [`genericos.uwu`](examples/genericos.uwu) (`Option`, `Result`, árbol binario),
   [`sistema.uwu`](examples/sistema.uwu) (biblioteca estándar),
   [`inventario.uwu`](examples/inventario.uwu) (tuplas, desestructuración, interpolación y namespaces),
+  [`tareas.uwu`](examples/tareas.uwu) (una lista de tareas en la terminal, guardada en un archivo),
   [`modulos/`](examples/modulos/) (un proyecto con varios archivos) y
   [`errores.uwu`](examples/errores.uwu) (los mensajes del compilador).
 

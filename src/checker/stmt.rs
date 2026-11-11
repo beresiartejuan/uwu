@@ -13,7 +13,14 @@ impl Checker {
                     self.expect_assignable(&init_t, &ann, init.span(), None);
                     var_t = ann;
                 } else {
-                    let mut t = widen(&init_t);
+                    // `let mut p = { ok: true }` tiene que poder cambiar `p.ok`; `let p` no.
+                    // Si el valor ya existía (`let mut q = p`), `q` es otra referencia al mismo
+                    // objeto y no puede tener un tipo más amplio que el original.
+                    let fresh = !matches!(
+                        init,
+                        Expr::Ident { .. } | Expr::Member { .. } | Expr::Index { .. } | Expr::Path { .. }
+                    );
+                    let mut t = if *mutable && fresh { widen(&init_t) } else { widen_value(&init_t) };
                     if has_never_array(&t) {
                         self.error(
                             format!("no se puede inferir el tipo de `{}`", name),
@@ -61,7 +68,7 @@ impl Checker {
                         );
                         ERR
                     }
-                    None => widen(&init_t),
+                    None => widen_value(&init_t),
                 };
                 self.prep_pattern(pattern);
                 self.bind_irrefutable(pattern, &t, "`let`");
@@ -200,6 +207,14 @@ impl Checker {
     pub(super) fn namespace_member(&mut self, ns: &str, name: &str, span: Span) -> Option<Type> {
         if let Some(m) = stdlib::lookup(ns, name) {
             return Some(stdlib::member_type(&m));
+        }
+        if let Some(new) = stdlib::renamed(ns, name) {
+            self.error(
+                format!("la biblioteca `{}` no tiene `{}`", ns, name),
+                span,
+                Some(format!("ahora se llama `{}::{}`", ns, new)),
+            );
+            return None;
         }
         let members = stdlib::module(ns).unwrap_or_default();
         let similar = members.iter().map(|(n, _)| *n).find(|n| levenshtein(n, name) <= 2);

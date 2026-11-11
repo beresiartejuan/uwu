@@ -17,5 +17,5 @@ fn main() {
     for f in figuras {
         print(rellenar(f.tipo, 12), "área", area(f), "| perímetro", perimetro(f));
     }
-    print("generado el", time::iso(time::ahora()));
+    print("generado el", time::iso(time::now()));
 }

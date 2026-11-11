@@ -1,0 +1,495 @@
+// Gestor de tareas por línea de comandos, con persistencia en un archivo.
+//
+//   uwu examples/tareas.uwu agregar Comprar pan
+//   uwu examples/tareas.uwu listar
+//   uwu examples/tareas.uwu ayuda
+//
+// Las tareas se guardan en `tareas.txt` (o en lo que diga `UWU_TAREAS`).
+// Sin argumentos sólo muestra la ayuda: no lee ni escribe ningún archivo.
+//
+// Usa uniones de literales para los estados, `match` para los errores,
+// tuplas, desestructuración, interpolación y namespaces.
+
+import <fs>;
+import <io>;
+import <env>;
+import <proc>;
+import <time>;
+
+type Estado = "pendiente" | "en_progreso" | "hecha" | "cancelada";
+type Tarea = { id: number, estado: Estado, creada: number, titulo: string };
+
+// `siguiente` es el próximo id a asignar: se guarda en el archivo para que
+// los ids no se reutilicen aunque se borre la última tarea.
+type Lista = { siguiente: number, tareas: Tarea[] };
+
+type Res = { ok: true } | { ok: false, error: string };
+
+let ARCHIVO_POR_DEFECTO = "tareas.txt";
+let CABECERA = "# uwu-tareas v1";
+
+namespace estados {
+    let TODOS: Estado[] = ["pendiente", "en_progreso", "hecha", "cancelada"];
+
+    fn desde(s: string): { ok: true, estado: Estado } | { ok: false } {
+        match s.lower() {
+            "pendiente" => { ok: true, estado: "pendiente" },
+            "en_progreso" => { ok: true, estado: "en_progreso" },
+            "en-progreso" => { ok: true, estado: "en_progreso" },
+            "progreso" => { ok: true, estado: "en_progreso" },
+            "hecha" => { ok: true, estado: "hecha" },
+            "cancelada" => { ok: true, estado: "cancelada" },
+            _ => { ok: false },
+        }
+    }
+
+    fn marca(e: Estado): string {
+        match e {
+            "pendiente" => "[ ]",
+            "en_progreso" => "[~]",
+            "hecha" => "[x]",
+            "cancelada" => "[-]",
+        }
+    }
+
+    fn validos(): string { TODOS.join(", ") }
+}
+
+// Formato del archivo, una tarea por línea con los campos separados por tab:
+//
+//   # uwu-tareas v1
+//   siguiente<TAB>4
+//   1<TAB>pendiente<TAB>1762873200<TAB>Comprar pan
+//
+// En el título, `\` se escribe `\\`, el tab `\t`, el salto de línea `\n` y el
+// retorno de carro `\r`, así que una línea nunca tiene más de 4 campos.
+// Las líneas vacías y las que empiezan con `#` se ignoran.
+namespace formato {
+    fn escapar(s: string): string {
+        let mut r = "";
+        for c in s {
+            r += match c {
+                "\\" => "\\\\",
+                "\t" => "\\t",
+                "\n" => "\\n",
+                "\r" => "\\r",
+                _ => c,
+            };
+        }
+        r
+    }
+
+    fn desescapar(s: string): { ok: true, texto: string } | { ok: false, error: string } {
+        let mut r = "";
+        let mut escapando = false;
+        for c in s {
+            if escapando {
+                let real = match c {
+                    "\\" => "\\",
+                    "t" => "\t",
+                    "n" => "\n",
+                    "r" => "\r",
+                    _ => return { ok: false, error: "escape desconocido `\\{c}` en el título" },
+                };
+                r += real;
+                escapando = false;
+            } else if c == "\\" {
+                escapando = true;
+            } else {
+                r += c;
+            }
+        }
+        if escapando {
+            return { ok: false, error: "el título termina con un `\\` suelto" };
+        }
+        { ok: true, texto: r }
+    }
+
+    // Entero positivo escrito sólo con dígitos. `to_number` solo acepta
+    // también " 2", "1e3" o "2.5", que no son ids.
+    fn entero(s: string): { ok: true, valor: number } | { ok: false } {
+        if s.is_empty() || s.len() > 15 { return { ok: false }; }
+        for c in s {
+            if !"0123456789".contains(c) { return { ok: false }; }
+        }
+        match s.to_number() {
+            { ok: true, valor } => { ok: true, valor },
+            { ok: false } => { ok: false },
+        }
+    }
+
+    fn linea(t: Tarea): string {
+        "{t.id}\t{t.estado}\t{t.creada}\t{escapar(t.titulo)}"
+    }
+
+    fn tarea(linea: string): { ok: true, tarea: Tarea } | { ok: false, error: string } {
+        let campos = linea.split("\t");
+        if campos.len() != 4 {
+            return { ok: false, error: "se esperaban 4 campos separados por tab y hay {campos.len()}" };
+        }
+        let id = match entero(campos[0]) {
+            { ok: true, valor } if valor > 0 => valor,
+            _ => return { ok: false, error: "id inválido `{campos[0]}`" },
+        };
+        let estado = match estados::desde(campos[1]) {
+            { ok: true, estado } => estado,
+            { ok: false } => return { ok: false, error: "estado desconocido `{campos[1]}`" },
+        };
+        let creada = match entero(campos[2]) {
+            { ok: true, valor } => valor,
+            { ok: false } => return { ok: false, error: "fecha inválida `{campos[2]}`" },
+        };
+        match desescapar(campos[3]) {
+            { ok: true, texto } => { ok: true, tarea: { id, estado, creada, titulo: texto } },
+            { ok: false, error } => { ok: false, error },
+        }
+    }
+
+    // Junta todos los errores en vez de cortar en el primero, para que se
+    // puedan arreglar de una vez.
+    fn lista(contenido: string, nombre: string): { ok: true, lista: Lista } | { ok: false, errores: string[] } {
+        let mut tareas: Tarea[] = [];
+        let mut ids: number[] = [];
+        let mut errores: string[] = [];
+        let mut siguiente = 1;
+
+        for (i, texto) in contenido.lines().enumerate() {
+            let donde = "{nombre}:{i + 1}";
+            if texto.trim().is_empty() || texto.starts_with("#") { continue; }
+
+            if texto.starts_with("siguiente\t") {
+                match entero(texto.slice(10, texto.len())) {
+                    { ok: true, valor } => siguiente = siguiente.max(valor),
+                    { ok: false } => errores.push("{donde}: valor de `siguiente` inválido"),
+                }
+                continue;
+            }
+
+            match tarea(texto) {
+                { ok: true, tarea } => {
+                    if ids.contains(tarea.id) {
+                        errores.push("{donde}: el id {tarea.id} está repetido");
+                    } else {
+                        ids.push(tarea.id);
+                        siguiente = siguiente.max(tarea.id + 1);
+                        tareas.push(tarea);
+                    }
+                }
+                { ok: false, error } => errores.push("{donde}: {error}"),
+            }
+        }
+
+        if errores.is_empty() {
+            { ok: true, lista: { siguiente, tareas } }
+        } else {
+            { ok: false, errores }
+        }
+    }
+
+    fn texto(l: Lista): string {
+        let mut r = "{CABECERA}\nsiguiente\t{l.siguiente}\n";
+        for t in l.tareas {
+            r += linea(t) + "\n";
+        }
+        r
+    }
+}
+
+namespace almacen {
+    fn ruta(): string {
+        match env::get("UWU_TAREAS") {
+            { ok: true, value } if !value.trim().is_empty() => value,
+            _ => ARCHIVO_POR_DEFECTO,
+        }
+    }
+
+    // Si el archivo no existe todavía, la lista está vacía.
+    fn cargar(ruta: string): { ok: true, lista: Lista } | { ok: false, error: string } {
+        if !fs::exists(ruta) {
+            return { ok: true, lista: { siguiente: 1, tareas: [] } };
+        }
+        let contenido = match fs::read(ruta) {
+            { ok: true, content } => content,
+            { ok: false, error } => return { ok: false, error: "no se pudo leer `{ruta}`: {error}" },
+        };
+        match formato::lista(contenido, ruta) {
+            { ok: true, lista } => { ok: true, lista },
+            { ok: false, errores } => {
+                let n = errores.len();
+                let detalle = errores.map(|e| "  " + e).join("\n");
+                {
+                    ok: false,
+                    error: "`{ruta}` tiene {n} línea(s) corrupta(s):\n{detalle}\narreglalas a mano o mové el archivo; no se modificó nada",
+                }
+            }
+        }
+    }
+
+    // Escribe en un temporal y lo renombra, para no dejar el archivo a medias.
+    fn guardar(ruta: string, l: Lista): Res {
+        let temporal = ruta + ".tmp";
+        match fs::write(temporal, formato::texto(l)) {
+            { ok: true } => {},
+            { ok: false, error } => return { ok: false, error: "no se pudo guardar `{ruta}`: {error}" },
+        }
+        match fs::rename(temporal, ruta) {
+            { ok: true } => { ok: true },
+            { ok: false, error } => {
+                fs::remove(temporal);
+                { ok: false, error: "no se pudo guardar `{ruta}`: {error}" }
+            }
+        }
+    }
+}
+
+// ---- Presentación ----
+
+fn rellenar(s: string, ancho: number): string {
+    s + " ".repeat((ancho - s.len()).max(0))
+}
+
+fn dos(n: number): string {
+    if n < 10 { "0{n}" } else { "{n}" }
+}
+
+fn fecha(ts: number): string {
+    let { day, month, year } = time::local_date(ts);
+    "{dos(day)}/{dos(month)}/{year}"
+}
+
+// El título en una sola línea, con los saltos visibles.
+fn titulo_visible(t: string): string {
+    t.replace("\r", "").replace("\n", " ⏎ ").replace("\t", " ")
+}
+
+fn mostrar(tareas: Tarea[]) {
+    let ancho_id = tareas.map(|t| "#{t.id}".len()).fold(0, |a, b| a.max(b));
+    for { id, estado, creada, titulo } in tareas {
+        let marca = estados::marca(estado);
+        print("{rellenar("#{id}", ancho_id)} {marca} {rellenar(estado, 11)}  {fecha(creada)}  {titulo_visible(titulo)}");
+    }
+}
+
+fn ayuda() {
+    print("uwu tareas: un gestor de tareas en la terminal");
+    print("");
+    print("uso: uwu tareas.uwu <comando> [argumentos]");
+    print("");
+    print("comandos:");
+    print("  agregar <título...>       agrega una tarea pendiente");
+    print("  listar [estado]           muestra las tareas, opcionalmente de un estado");
+    print("  cambiar <id> <estado>     cambia el estado de una tarea");
+    print("  empezar <id>              atajo de `cambiar <id> en_progreso`");
+    print("  terminar <id>             atajo de `cambiar <id> hecha`");
+    print("  borrar <id>               borra una tarea (su id no se reutiliza)");
+    print("  resumen                   cuenta las tareas de cada estado");
+    print("  ayuda                     muestra este mensaje");
+    print("");
+    print("estados: {estados::validos()}");
+    print("archivo: {almacen::ruta()} (se cambia con la variable UWU_TAREAS)");
+}
+
+// ---- Comandos ----
+// Cada uno devuelve `Res`; `main` se encarga de mostrar el error.
+
+fn falla(error: string): Res { { ok: false, error } }
+
+fn parsear_id(s: string): { ok: true, id: number } | { ok: false, error: string } {
+    match formato::entero(s) {
+        { ok: true, valor } if valor > 0 => { ok: true, id: valor },
+        _ => { ok: false, error: "`{s}` no es un id válido: tiene que ser un número entero positivo, como 3" },
+    }
+}
+
+fn parsear_estado(s: string): { ok: true, estado: Estado } | { ok: false, error: string } {
+    match estados::desde(s) {
+        { ok: true, estado } => { ok: true, estado },
+        { ok: false } => { ok: false, error: "estado desconocido `{s}`; los válidos son: {estados::validos()}" },
+    }
+}
+
+fn buscar(l: Lista, id: number): { ok: true, indice: number, tarea: Tarea } | { ok: false, error: string } {
+    for (indice, tarea) in l.tareas.enumerate() {
+        if tarea.id == id { return { ok: true, indice, tarea }; }
+    }
+    { ok: false, error: "no hay ninguna tarea con id {id}" }
+}
+
+fn agregar(ruta: string, args: string[]): Res {
+    let titulo = args.join(" ").trim();
+    if titulo.is_empty() {
+        return falla("falta el título: uwu tareas.uwu agregar <título...>");
+    }
+    let mut l = match almacen::cargar(ruta) {
+        { ok: true, lista } => lista,
+        { ok: false, error } => return falla(error),
+    };
+    let t: Tarea = { id: l.siguiente, estado: "pendiente", creada: time::now().floor(), titulo };
+    l.tareas.push(t);
+    l.siguiente += 1;
+    match almacen::guardar(ruta, l) {
+        { ok: true } => {
+            print("agregada #{t.id}: {titulo_visible(titulo)}");
+            { ok: true }
+        }
+        { ok: false, error } => falla(error),
+    }
+}
+
+fn listar(ruta: string, args: string[]): Res {
+    if args.len() > 1 {
+        return falla("`listar` acepta a lo sumo un estado: uwu tareas.uwu listar [estado]");
+    }
+    let l = match almacen::cargar(ruta) {
+        { ok: true, lista } => lista,
+        { ok: false, error } => return falla(error),
+    };
+    if args.is_empty() {
+        if l.tareas.is_empty() {
+            print("no hay tareas. agregá una con: uwu tareas.uwu agregar <título...>");
+        } else {
+            mostrar(l.tareas);
+        }
+        return { ok: true };
+    }
+    let estado = match parsear_estado(args[0]) {
+        { ok: true, estado } => estado,
+        { ok: false, error } => return falla(error),
+    };
+    let filtradas = l.tareas.filter(|t| t.estado == estado);
+    if filtradas.is_empty() {
+        print("no hay tareas en estado `{estado}`");
+    } else {
+        mostrar(filtradas);
+    }
+    { ok: true }
+}
+
+fn cambiar_a(ruta: string, texto_id: string, nuevo: Estado): Res {
+    let id = match parsear_id(texto_id) {
+        { ok: true, id } => id,
+        { ok: false, error } => return falla(error),
+    };
+    let mut l = match almacen::cargar(ruta) {
+        { ok: true, lista } => lista,
+        { ok: false, error } => return falla(error),
+    };
+    let (indice, anterior) = match buscar(l, id) {
+        { ok: true, indice, tarea } => (indice, tarea.estado),
+        { ok: false, error } => return falla(error),
+    };
+    if anterior == nuevo {
+        print("#{id} ya estaba en `{nuevo}`, no cambió nada");
+        return { ok: true };
+    }
+    l.tareas[indice].estado = nuevo;
+    match almacen::guardar(ruta, l) {
+        { ok: true } => {
+            print("#{id}: {anterior} → {nuevo}");
+            { ok: true }
+        }
+        { ok: false, error } => falla(error),
+    }
+}
+
+fn cambiar(ruta: string, args: string[]): Res {
+    match args.len() {
+        2 => match parsear_estado(args[1]) {
+            { ok: true, estado } => cambiar_a(ruta, args[0], estado),
+            { ok: false, error } => falla(error),
+        },
+        _ => falla("uso: uwu tareas.uwu cambiar <id> <estado>"),
+    }
+}
+
+fn atajo(ruta: string, comando: string, args: string[], estado: Estado): Res {
+    if args.len() != 1 {
+        return falla("uso: uwu tareas.uwu {comando} <id>");
+    }
+    cambiar_a(ruta, args[0], estado)
+}
+
+fn borrar(ruta: string, args: string[]): Res {
+    if args.len() != 1 {
+        return falla("uso: uwu tareas.uwu borrar <id>");
+    }
+    let id = match parsear_id(args[0]) {
+        { ok: true, id } => id,
+        { ok: false, error } => return falla(error),
+    };
+    let l = match almacen::cargar(ruta) {
+        { ok: true, lista } => lista,
+        { ok: false, error } => return falla(error),
+    };
+    let tarea = match buscar(l, id) {
+        { ok: true, tarea } => tarea,
+        { ok: false, error } => return falla(error),
+    };
+    let nueva: Lista = { siguiente: l.siguiente, tareas: l.tareas.filter(|t| t.id != id) };
+    match almacen::guardar(ruta, nueva) {
+        { ok: true } => {
+            print("borrada #{id}: {titulo_visible(tarea.titulo)}");
+            { ok: true }
+        }
+        { ok: false, error } => falla(error),
+    }
+}
+
+fn resumen(ruta: string, args: string[]): Res {
+    if !args.is_empty() {
+        return falla("`resumen` no lleva argumentos");
+    }
+    let l = match almacen::cargar(ruta) {
+        { ok: true, lista } => lista,
+        { ok: false, error } => return falla(error),
+    };
+    let total = l.tareas.len();
+    let conteos = estados::TODOS.map(|e| (e, l.tareas.filter(|t| t.estado == e).len()));
+    for (estado, n) in conteos {
+        print("{estados::marca(estado)} {rellenar(estado, 11)} {n}");
+    }
+    print("    {rellenar("total", 11)} {total}");
+
+    // El progreso no cuenta las canceladas.
+    let hechas = l.tareas.filter(|t| t.estado == "hecha").len();
+    let vigentes = l.tareas.filter(|t| t.estado != "cancelada").len();
+    if vigentes > 0 {
+        let pct = (hechas / vigentes * 100).round();
+        let llenos = (hechas / vigentes * 20).round();
+        print("progreso: [{"#".repeat(llenos)}{".".repeat(20 - llenos)}] {hechas}/{vigentes} ({pct}%)");
+    }
+    { ok: true }
+}
+
+fn main() {
+    let args = proc::args();
+    if args.is_empty() {
+        ayuda();
+        return;
+    }
+    let comando = args[0];
+    let resto = args.slice(1, args.len());
+    let ruta = almacen::ruta();
+
+    let resultado: Res = match comando {
+        "agregar" => agregar(ruta, resto),
+        "listar" => listar(ruta, resto),
+        "cambiar" => cambiar(ruta, resto),
+        "empezar" => atajo(ruta, comando, resto, "en_progreso"),
+        "terminar" => atajo(ruta, comando, resto, "hecha"),
+        "borrar" => borrar(ruta, resto),
+        "resumen" => resumen(ruta, resto),
+        "ayuda" => { ayuda(); { ok: true } }
+        "-h" => { ayuda(); { ok: true } }
+        "--help" => { ayuda(); { ok: true } }
+        _ => falla("comando desconocido `{comando}`. probá `uwu tareas.uwu ayuda`"),
+    };
+
+    match resultado {
+        { ok: true } => {},
+        { ok: false, error } => {
+            io::write_err("error: {error}\n");
+            proc::exit(1);
+        }
+    }
+}

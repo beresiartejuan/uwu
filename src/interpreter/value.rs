@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 pub struct ClosureV<'p> {
     pub name: String,
-    pub params: Vec<String>,
+    pub params: &'p [ParamNode],
     pub body: FnBody<'p>,
     pub env: Rc<Env<'p>>,
 }

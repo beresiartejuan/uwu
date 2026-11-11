@@ -44,7 +44,7 @@ print(cuadrado(2));              // error: no existe `cuadrado` en este ámbito
 | `namespace geo { ... }` | agrupa declaraciones bajo `geo::` (ver [namespaces](#namespaces)) |
 | `export namespace geo { ... }` | exporta el namespace con todo lo que tiene |
 | `using namespace fs;` | trae todos los miembros de una biblioteca o namespace al ámbito |
-| `using fs::leer;` | trae un solo miembro |
+| `using fs::read;` | trae un solo miembro |
 
 `import`, `export` y `namespace` sólo pueden ir en el nivel superior del
 archivo, no dentro de funciones ni bloques. `export module` tiene que ser la primera línea.

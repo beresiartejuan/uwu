@@ -416,7 +416,7 @@ impl Parser {
             }
             self.next();
             let ty = self.parse_type()?;
-            params.push(ParamNode { name: p.value, ty: Some(ty), span: p.span });
+            params.push(ParamNode { name: p.value, ty: Some(ty), pattern: None, span: p.span });
             if !self.eat(",") {
                 break;
             }
@@ -532,10 +532,10 @@ impl Parser {
                 let span = Span::join(expr.span(), self.prev());
                 expr = Expr::Call { callee: Box::new(expr), type_args, args, span };
             } else if self.at("::", 0) && self.peek(1).kind == TokenKind::Ident {
-                // fs::leer
+                // fs::read
                 let Expr::Ident { name: ns, span: ns_span } = &expr else {
                     return self.fail(
-                        "`::` sólo puede usarse después del nombre de un módulo, como en `fs::leer`".into(),
+                        "`::` sólo puede usarse después del nombre de un módulo, como en `fs::read`".into(),
                         self.peek(0).span,
                         None,
                     );
@@ -758,12 +758,35 @@ impl Parser {
             }
             "for" => {
                 self.next();
-                let pattern = if self.at("(", 0) || self.at("{", 0) {
+                // `for let x in ...`: la variable (o todas las del patrón) es mutable
+                let mutable = self.eat("let");
+                let pat_start = self.peek(0).span;
+                let mut pattern = if self.at("(", 0) || self.at("{", 0) {
                     self.parse_pattern()?
+                } else if self.at("mut", 0) {
+                    let hint = match self.peek(1) {
+                        n if n.kind == TokenKind::Ident => format!("escribí `for let {} in ...`", n.value),
+                        _ => "escribí `for let x in ...`".into(),
+                    };
+                    return self.fail(
+                        "en un `for`, la variable mutable se declara con `let`".into(),
+                        pat_start,
+                        Some(hint),
+                    );
                 } else {
                     let name = self.ident("el nombre de la variable del `for`")?;
                     Pattern::Bind { id: self.fresh_id(), name: name.value, mutable: false, ty: None, span: name.span }
                 };
+                if pattern.has_mut() {
+                    return self.fail(
+                        "en un `for`, las variables mutables se declaran con `let` antes del patrón".into(),
+                        pattern.span(),
+                        Some("escribí `for let (a, b) in ...`: todas las variables del patrón quedan mutables".into()),
+                    );
+                }
+                if mutable {
+                    pattern.make_mut();
+                }
                 self.expect("in", "")?;
                 let iter = self.parse_expr()?;
                 let body = self.parse_block()?;
@@ -824,10 +847,17 @@ impl Parser {
         if !self.eat("||") {
             self.expect("|", "")?;
             while !self.at("|", 0) {
-                let name = self.ident("el nombre de un parámetro")?;
+                // `|(a, b)| ...` y `|{ x, y }| ...` desestructuran el argumento
+                let (name, pattern, span) = if self.at("(", 0) || self.at("{", 0) {
+                    let p = self.parse_pattern()?;
+                    (format!("#{}", params.len()), Some(p.clone()), p.span())
+                } else {
+                    let t = self.ident("el nombre de un parámetro")?;
+                    (t.value, None, t.span)
+                };
                 // sin uniones acá: `|x: number | string|` sería ambiguo
                 let ty = if self.eat(":") { Some(self.parse_postfix_type()?) } else { None };
-                params.push(ParamNode { name: name.value, ty, span: name.span });
+                params.push(ParamNode { name, ty, pattern, span });
                 if !self.eat(",") {
                     break;
                 }

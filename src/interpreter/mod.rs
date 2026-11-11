@@ -24,11 +24,11 @@ pub struct Interpreter<'p, 'o> {
     pattern_types: HashMap<usize, Type>,
     script_args: &'p [String],
     depth: usize,
-    /// Estado del generador de `math::aleatorio` (xorshift64*).
+    /// Estado del generador de `math::random` (xorshift64*).
     rng: u64,
-    /// Para `time::reloj()`.
+    /// Para `time::elapsed()`.
     start: std::time::Instant,
-    /// Procesos de `proc::lanzar`, para poder hacer `proc::esperar(pid)`.
+    /// Procesos de `proc::spawn`, para poder hacer `proc::wait(pid)`.
     children: HashMap<u32, std::process::Child>,
 }
 
@@ -167,7 +167,7 @@ impl<'p, 'o> Interpreter<'p, 'o> {
             if let Stmt::Fn(d) = s {
                 let closure = ClosureV {
                     name: d.name.clone(),
-                    params: d.params.iter().map(|p| p.name.clone()).collect(),
+                    params: &d.params,
                     body: FnBody::Block(&d.body),
                     env: Rc::clone(env),
                 };
@@ -257,11 +257,15 @@ impl<'p, 'o> Interpreter<'p, 'o> {
         if self.depth >= MAX_DEPTH {
             return Err(rt("desbordamiento de pila (¿recursión infinita?)", span));
         }
-        self.depth += 1;
         let env = Env::new(Some(Rc::clone(&c.env)));
         for (i, p) in c.params.iter().enumerate() {
-            env.define(p, args.get(i).cloned().unwrap_or(Value::Unit));
+            let v = args.get(i).cloned().unwrap_or(Value::Unit);
+            match &p.pattern {
+                Some(pat) => self.bind(pat, &v, &env, span)?,
+                None => env.define(&p.name, v),
+            }
         }
+        self.depth += 1;
         let result = match c.body {
             FnBody::Block(b) => self.eval_block(b, &env),
             FnBody::Expr(e) => self.eval(e, &env),
@@ -480,12 +484,8 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 Err(rt(format!("ningún brazo del `match` coincidió con {}", display(&v, false)), *span))
             }
             Expr::Closure { params, body, .. } => {
-                let closure = ClosureV {
-                    name: "closure".into(),
-                    params: params.iter().map(|p| p.name.clone()).collect(),
-                    body: FnBody::Expr(body),
-                    env: Rc::clone(env),
-                };
+                let closure =
+                    ClosureV { name: "closure".into(), params, body: FnBody::Expr(body), env: Rc::clone(env) };
                 Ok(Value::Closure(Rc::new(closure)))
             }
             Expr::Return { value, .. } => {

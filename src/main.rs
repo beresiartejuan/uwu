@@ -5,6 +5,25 @@ use uwu::modules::SourceFile;
 use uwu::repl::Repl;
 use uwu::{format_diagnostic, run_file, STACK_SIZE};
 
+/// Como `println!`, pero si se cerró la salida (`uwu prog.uwu | head -1`)
+/// termina en silencio en vez de entrar en pánico.
+macro_rules! outln {
+    () => {
+        write_out(format_args!(""))
+    };
+    ($($arg:tt)*) => {
+        write_out(format_args!($($arg)*))
+    };
+}
+
+fn write_out(args: std::fmt::Arguments) {
+    if let Err(e) = writeln!(std::io::stdout().lock(), "{}", args) {
+        if e.kind() == std::io::ErrorKind::BrokenPipe {
+            std::process::exit(0);
+        }
+    }
+}
+
 const USAGE: &str = "uwu — un lenguaje con la sintaxis de Rust y los tipos de TypeScript
 
 uso:
@@ -42,9 +61,9 @@ fn repl() -> i32 {
     let interactive = std::io::stdin().is_terminal();
     let color = use_color();
     if interactive {
-        println!("uwu {} — `:ayuda` muestra los comandos, Ctrl+D sale", env!("CARGO_PKG_VERSION"));
+        outln!("uwu {} — `:ayuda` muestra los comandos, Ctrl+D sale", env!("CARGO_PKG_VERSION"));
     }
-    let mut out = |line: &str| println!("{}", line);
+    let mut out = |line: &str| outln!("{}", line);
     let mut repl = Repl::new(&mut out);
     let mut lines = std::io::stdin().lock().lines();
     let mut buf = String::new();
@@ -55,7 +74,7 @@ fn repl() -> i32 {
         }
         let Some(Ok(line)) = lines.next() else {
             if interactive {
-                println!();
+                outln!();
             }
             break;
         };
@@ -68,10 +87,10 @@ fn repl() -> i32 {
                 let (name, rest) = cmd.split_once(' ').unwrap_or((cmd, ""));
                 match name {
                     "salir" | "q" | "quit" | "exit" => break,
-                    "ayuda" | "h" | "help" => println!("{}", REPL_HELP),
+                    "ayuda" | "h" | "help" => outln!("{}", REPL_HELP),
                     "limpiar" | "reset" => repl.reset(),
                     "tipo" | "t" | "type" => match repl.type_of(rest) {
-                        Ok(t) => println!("{}", t),
+                        Ok(t) => outln!("{}", t),
                         Err(ds) => ds.iter().for_each(|d| {
                             eprintln!(
                                 "{}
@@ -98,7 +117,7 @@ fn repl() -> i32 {
             eprintln!("{}\n", show(e, repl.files(), color));
         }
         if let Some(v) = r.value {
-            println!("{}", v);
+            outln!("{}", v);
         }
     }
     0
@@ -122,15 +141,15 @@ fn real_main(argv: &[String]) -> i32 {
     let only_check = first == Some("check");
     let file_idx = if only_check || first == Some("run") { 1 } else { 0 };
     let Some(file) = argv.get(file_idx) else {
-        println!("{}", USAGE);
+        outln!("{}", USAGE);
         return 1;
     };
     if file == "-h" || file == "--help" {
-        println!("{}", USAGE);
+        outln!("{}", USAGE);
         return 0;
     }
     let script_args: Vec<String> = argv[file_idx + 1..].to_vec();
-    let mut out = |line: &str| println!("{}", line);
+    let mut out = |line: &str| outln!("{}", line);
     let result = match run_file(Path::new(file), &mut out, only_check, &script_args) {
         Ok(r) => r,
         Err(e) => {
@@ -152,7 +171,7 @@ fn real_main(argv: &[String]) -> i32 {
         return 101;
     }
     if only_check {
-        println!("✓ {}: sin errores de tipos", file);
+        outln!("✓ {}: sin errores de tipos", file);
     }
     0
 }

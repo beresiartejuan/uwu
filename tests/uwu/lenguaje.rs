@@ -208,7 +208,7 @@ fn desestructuracion_tiene_que_ser_irrefutable() {
         errors("let (0, b) = (1, 2);")[0],
         "el patrón de `let` no cubre todos los valores: falta `(number, number)`"
     );
-    assert_eq!(errors("let { b } = { a: 1 };")[0], "el tipo `{ a: number }` no tiene el campo `b`");
+    assert_eq!(errors("let { b } = { a: 1 };")[0], "el tipo `{ a: 1 }` no tiene el campo `b`");
     assert_eq!(errors("let (a, b) = (1, 2); a = 3;"), vec!["no se puede modificar `a` porque es inmutable"]);
     assert!(errors("let mut (a, b) = (1, 2);")[0].contains("`mut` va dentro del patrón"));
 }
@@ -256,4 +256,43 @@ fn interpolacion_errores() {
     assert_eq!(errors(r#"fn f() {} print("{f()}");"#), vec!["no se puede interpolar algo de tipo `void`"]);
     assert_eq!(errors(r#"fn f() {} print("{f}");"#), vec!["no se puede interpolar una función (`() => void`)"]);
     assert_eq!(errors(r#"print("{nada}");"#), vec!["no existe `nada` en este ámbito"]);
+}
+
+#[test]
+fn closures_con_parametros_desestructurados() {
+    let code = r#"
+      let xs = [10, 20];
+      print(xs.enumerate().map(|(i, x)| "{i}:{x}"));
+      print([{ x: 1, y: 2 }, { x: 3, y: 4 }].map(|{ x, y }| x + y));
+      let f = |(a, b): (number, number)| a * b;
+      print(f((6, 7)));
+      print(xs.zip(["a", "b"]).fold("", |acc, (n, s)| acc + s + n));"#;
+    assert_eq!(exec(code), vec![r#"["0:10", "1:20"]"#, "[3, 7]", "42", "a10b20"]);
+    assert_eq!(errors("let g = |(a, b)| a;"), vec!["no se puede inferir el tipo de este parámetro"]);
+    assert_eq!(
+        errors("type R = { ok: true } | { ok: false }; let h = |{ ok: true }: R| 1;"),
+        vec!["el patrón de un parámetro no cubre todos los valores: falta `{ ok: false }`"]
+    );
+}
+
+#[test]
+fn for_let_hace_mutable_la_variable() {
+    let code = r#"
+      let mut tareas = [{ titulo: "a", hecha: false }, { titulo: "b", hecha: false }];
+      for let t in tareas { t.hecha = true; }
+      for let (i, t) in tareas.enumerate() { i += 1; t.titulo = t.titulo + i; }
+      print(tareas);"#;
+    assert_eq!(exec(code), vec![r#"[{ titulo: "a1", hecha: true }, { titulo: "b2", hecha: true }]"#]);
+    assert_eq!(errors("for x in [1] { x = 2; }"), vec!["no se puede modificar `x` porque es inmutable"]);
+    assert_eq!(errors("for mut x in [1] {}"), vec!["en un `for`, la variable mutable se declara con `let`"]);
+    assert!(errors("for (i, mut x) in [1].enumerate() {}")[0].contains("con `let` antes del patrón"));
+}
+
+#[test]
+fn slice_con_el_final_opcional() {
+    assert_eq!(
+        exec(r#"print("hola mundo".slice(5), [1, 2, 3, 4].slice(1), "hola".slice(-2), [1, 2, 3].slice(0, 2));"#),
+        vec![r#"mundo [2, 3, 4] la [1, 2]"#]
+    );
+    assert_eq!(errors(r#""x".slice();"#), vec!["`.slice` espera entre 1 y 2 argumento(s), pero recibió 0"]);
 }

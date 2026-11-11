@@ -14,10 +14,27 @@
 - **Interpolación de strings**: `"hola {nombre}, tenés {xs.len()} mensajes"`.
   `{{` y `}}` escriben llaves literales.
 - Métodos nuevos de arreglos: `enumerate()` y `zip(otro)`.
+- Los closures desestructuran sus parámetros: `xs.enumerate().map(|(i, x)| ...)`,
+  `|{ x, y }| x + y`, `|(a, b): (number, number)| a * b`.
+- `for let x in xs` hace mutable la variable del `for` (o todas las de un patrón:
+  `for let (i, t) in ...`). `for mut x` da un error que sugiere `for let`.
+- `slice(desde, hasta?)`: el final es opcional, `"hola mundo".slice(5)` → `"mundo"`.
+- `let` conserva los campos literales de los objetos: `let r = { ok: true }` es
+  `{ ok: true }`, no `{ ok: boolean }`. Arregla `match` que daban «no exhaustivo»
+  con uniones discriminadas sin anotar. `let mut` sobre un objeto nuevo sigue
+  ensanchando los campos para poder modificarlos.
 
 > **Cambio incompatible:** las llaves dentro de los strings ahora interpolan.
 > Un string que tenía `{` o `}` literales tiene que escribirlos como `{{` y `}}`.
 > `namespace` pasa a ser palabra reservada.
+
+### Biblioteca estándar
+
+> **Cambio incompatible:** las funciones y los campos que devuelven pasan al
+> inglés: `fs::leer` → `fs::read`, `proc::ejecutar` → `proc::run`,
+> `{ ok: true, contenido }` → `{ ok: true, content }`, `time::fecha` → `time::date`
+> con `{ year, month, day, ... }`, etc. Usar un nombre viejo da un error que
+> dice cómo se llama ahora. La lista completa está en [docs/stdlib.md](docs/stdlib.md).
 
 ### Módulos
 
@@ -34,6 +51,11 @@
 - Comandos `:tipo`, `:limpiar`, `:ayuda` y `:salir`.
 - Lee varias líneas si falta cerrar un `{`, `(` o `[`.
 - La API está en `uwu::repl::Repl`.
+
+### Arreglos
+
+- `uwu programa.uwu | head` ya no entra en pánico cuando se cierra la salida:
+  el programa termina en silencio, con código 0.
 
 ### Código
 

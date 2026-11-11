@@ -204,7 +204,11 @@ impl Checker {
         match p {
             Pattern::Wild { .. } | Pattern::Lit { .. } => {}
             Pattern::Bind { name, mutable, .. } => {
-                let ty = self.pat_type(p).unwrap_or_else(|| t.clone());
+                let ty = match self.pat_type(p) {
+                    Some(ty) => ty,
+                    None if *mutable => widen(t),
+                    None => t.clone(),
+                };
                 self.define(name, VarInfo { ty, mutable: *mutable, kind: VarKind::Var });
             }
             Pattern::Tuple { items, .. } => {

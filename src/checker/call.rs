@@ -132,7 +132,7 @@ impl Checker {
         }
         if let Type::Param(pn) = p {
             if free.contains(pn) {
-                let w = widen(a);
+                let w = widen_value(a);
                 match bind.get(pn) {
                     None => {
                         bind.insert(pn.clone(), w);
@@ -304,7 +304,7 @@ impl Checker {
                 return self.apply_fn(&params, &ret, &type_params, variadic, &[], args, span, name);
             }
         }
-        let Some((params, ret, type_params)) = self.method_type(&ot, name) else {
+        let Some((mut params, ret, type_params)) = self.method_type(&ot, name) else {
             self.error(format!("el tipo `{}` no tiene el método `{}`", print(&ot), name), span, None);
             for a in args {
                 self.check_expr(a, None);
@@ -313,6 +313,22 @@ impl Checker {
         };
         if MUTATING_METHODS.contains(&name) {
             self.check_mutable(object, span);
+        }
+        let optional = OPTIONAL_ARGS.iter().find(|(m, _)| *m == name).map_or(0, |(_, n)| *n);
+        if optional > 0 {
+            let (min, max) = (params.len() - optional, params.len());
+            if args.len() < min || args.len() > max {
+                self.error(
+                    format!("`.{}` espera entre {} y {} argumento(s), pero recibió {}", name, min, max, args.len()),
+                    span,
+                    None,
+                );
+                for a in args {
+                    self.check_expr(a, None);
+                }
+                return ret;
+            }
+            params.truncate(args.len());
         }
         self.apply_fn(&params, &ret, &type_params, false, &[], args, span, &format!(".{}", name))
     }
@@ -336,18 +352,34 @@ impl Checker {
                 if let Some(t) = usable(exp_fn.as_ref().and_then(|(ps, _)| ps.get(i))) {
                     return t;
                 }
-                self.error(
-                    format!("no se puede inferir el tipo del parámetro `{}`", p.name),
-                    p.span,
-                    Some(format!("anotalo: `|{}: number| ...`", p.name)),
-                );
+                if p.pattern.is_some() {
+                    self.error(
+                        "no se puede inferir el tipo de este parámetro",
+                        p.span,
+                        Some("anotalo después del patrón: `|(a, b): (number, string)| ...`".into()),
+                    );
+                } else {
+                    self.error(
+                        format!("no se puede inferir el tipo del parámetro `{}`", p.name),
+                        p.span,
+                        Some(format!("anotalo: `|{}: number| ...`", p.name)),
+                    );
+                }
                 ERR
             })
             .collect();
         let expected_ret = usable(exp_fn.as_ref().map(|(_, r)| r));
         self.scopes.push(HashMap::new());
         for (i, p) in params.iter().enumerate() {
-            self.define(&p.name, VarInfo { ty: param_types[i].clone(), mutable: false, kind: VarKind::Var });
+            match &p.pattern {
+                Some(pat) => {
+                    self.prep_pattern(pat);
+                    self.bind_irrefutable(pat, &param_types[i], "un parámetro");
+                }
+                None => {
+                    self.define(&p.name, VarInfo { ty: param_types[i].clone(), mutable: false, kind: VarKind::Var })
+                }
+            }
         }
         self.fn_stack.push(FnCtx { ret: expected_ret.clone(), inferred: Vec::new() });
         self.loop_stack.push(None);
