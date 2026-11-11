@@ -1,0 +1,55 @@
+// La biblioteca estándar (por ahora sólo Linux).
+// Se importa como en C++ y sus miembros se usan con `::`.
+// Las operaciones que pueden fallar devuelven uniones, y el `match`
+// exhaustivo te obliga a manejar el error.
+
+import <fs>;
+import <path>;
+import <env>;
+import <proc>;
+import <time>;
+import <os>;
+
+print("sistema:", os::nombre(), os::arquitectura(), "| kernel", os::kernel());
+print("usuario:", os::usuario(), "| cpus:", os::cpus());
+
+let mem = os::memoria();
+let gib = 1024 * 1024 * 1024;
+print("memoria disponible:", (mem.disponible / gib * 10).round() / 10, "GiB de", (mem.total / gib).round());
+
+// Variables de entorno
+match env::obtener("SHELL") {
+    { ok: true, valor } => print("shell:", path::nombre(valor)),
+    { ok: false } => print("SHELL no está definida"),
+}
+
+// Archivos
+let ruta = path::unir(env::temp_dir(), "uwu_demo.txt");
+match fs::escribir(ruta, "hola desde uwu\nsegunda línea\n") {
+    { ok: true } => print("escrito", ruta),
+    { ok: false, error } => print("error al escribir:", error),
+}
+
+match fs::leer_lineas(ruta) {
+    { ok: true, lineas } => print("líneas:", lineas.len(), "→", lineas[0]),
+    { ok: false, error } => print("error al leer:", error),
+}
+
+match fs::info(ruta) {
+    { ok: true, tamano, permisos } => print("tamaño:", tamano, "bytes, permisos:", permisos.to_base(8)),
+    { ok: false, error } => print(error),
+}
+
+fs::borrar(ruta);
+print("¿existe todavía?", fs::existe(ruta));
+
+// Procesos
+match proc::shell("uname -s && echo $$") {
+    { ok: true, codigo, stdout } => print("shell dijo:", stdout.lines().join(" / "), "(código", codigo.to_string() + ")"),
+    { ok: false, error } => print("no se pudo ejecutar:", error),
+}
+
+// Tiempo
+let ahora = time::ahora();
+let f = time::fecha_local(ahora);
+print("hoy es", f.dia.to_string() + "/" + f.mes + "/" + f.anio, "| UTC:", time::iso(ahora));

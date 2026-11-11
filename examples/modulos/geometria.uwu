@@ -1,0 +1,27 @@
+// Un módulo: lo que tiene `export` se puede importar, el resto es privado.
+export module geometria;
+
+import <math>;
+
+export type Figura =
+    | { tipo: "circulo", radio: number }
+    | { tipo: "rectangulo", ancho: number, alto: number };
+
+// Privada: sólo se usa dentro de este archivo.
+fn redondear(n: number): number {
+    (n * 100).round() / 100
+}
+
+export fn area(f: Figura): number {
+    match f {
+        { tipo: "circulo", radio } => redondear(math::PI * radio * radio),
+        { tipo: "rectangulo", ancho, alto } => ancho * alto,
+    }
+}
+
+export fn perimetro(f: Figura): number {
+    match f {
+        { tipo: "circulo", radio } => redondear(2 * math::PI * radio),
+        { tipo: "rectangulo", ancho, alto } => 2 * (ancho + alto),
+    }
+}

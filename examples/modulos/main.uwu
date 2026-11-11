@@ -1,0 +1,21 @@
+// Probalo con: uwu examples/modulos/main.uwu
+//
+// - `import geometria;`  busca geometria.uwu junto a este archivo (o en $UWU_PATH)
+// - `import "texto.uwu";` importa un archivo por ruta relativa
+// - `import <time>;`      biblioteca estándar
+
+import geometria;
+import "texto.uwu";
+import <time>;
+
+fn main() {
+    print(titulo("Figuras"));
+    let figuras: Figura[] = [
+        { tipo: "circulo", radio: 1.5 },
+        { tipo: "rectangulo", ancho: 3, alto: 4 },
+    ];
+    for f in figuras {
+        print(rellenar(f.tipo, 12), "área", area(f), "| perímetro", perimetro(f));
+    }
+    print("generado el", time::iso(time::ahora()));
+}

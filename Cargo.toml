@@ -1,0 +1,20 @@
+[package]
+name = "uwu"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.83"
+description = "Un lenguaje de programación con la sintaxis de Rust y el sistema de tipos de TypeScript"
+authors = ["Juan Beresiarte"]
+license = "ISC"
+readme = "README.md"
+repository = "https://github.com/beresiartejuan/uwu"
+keywords = ["lenguaje", "interprete", "typescript", "rust", "type-checker"]
+categories = ["compilers", "command-line-utilities"]
+
+[[bin]]
+name = "uwu"
+path = "src/main.rs"
+
+[lib]
+name = "uwu"
+path = "src/lib.rs"

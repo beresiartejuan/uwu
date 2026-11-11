@@ -1,0 +1,10 @@
+// Otro módulo, importado por ruta desde main.uwu.
+
+export fn titulo(s: string): string {
+    let linea = "─".repeat(s.len() + 2);
+    "┌" + linea + "┐\n│ " + s + " │\n└" + linea + "┘"
+}
+
+export fn rellenar(s: string, ancho: number): string {
+    if s.len() >= ancho { s } else { s + " ".repeat(ancho - s.len()) }
+}
