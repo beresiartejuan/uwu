@@ -4,10 +4,11 @@
 //! - uniones: A | B
 //! - objetos estructurales: { x: number, y: number }
 //! - arreglos: T[]
+//! - tuplas: (number, string)
 //! - funciones: (a: number) => string
 //! - alias genéricos y recursivos: type Lista<T> = { tipo: "vacia" } | { tipo: "nodo", valor: T, resto: Lista<T> };
 
-use crate::ast::LitVal;
+use crate::syntax::ast::LitVal;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -22,6 +23,7 @@ pub enum Type {
     Err,
     Lit(LitVal),
     Array(Box<Type>),
+    Tuple(Vec<Type>),
     Object(Vec<(String, Type)>),
     Union(Vec<Type>),
     Fn {
@@ -130,6 +132,10 @@ pub fn print(t: &Type) -> String {
                 format!("{}[]", inner)
             }
         }
+        Type::Tuple(items) => match items.as_slice() {
+            [one] => format!("({},)", print(one)),
+            _ => format!("({})", items.iter().map(print).collect::<Vec<_>>().join(", ")),
+        },
         Type::Object(fields) => {
             if fields.is_empty() {
                 "{}".into()
@@ -196,6 +202,7 @@ pub fn subst(t: &Type, map: &HashMap<String, Type>) -> Type {
     match t {
         Type::Param(name) => map.get(name).cloned().unwrap_or_else(|| t.clone()),
         Type::Array(elem) => arr(subst(elem, map)),
+        Type::Tuple(items) => Type::Tuple(items.iter().map(|t| subst(t, map)).collect()),
         Type::Object(fields) => Type::Object(fields.iter().map(|(n, ft)| (n.clone(), subst(ft, map))).collect()),
         Type::Union(members) => mk_union(members.iter().map(|m| subst(m, map)).collect()),
         Type::Fn { params, ret, type_params, variadic } => Type::Fn {
@@ -215,6 +222,7 @@ pub fn contains_param(t: &Type, pred: &dyn Fn(&str) -> bool) -> bool {
     match t {
         Type::Param(name) => pred(name),
         Type::Array(elem) => contains_param(elem, pred),
+        Type::Tuple(items) => items.iter().any(|t| contains_param(t, pred)),
         Type::Object(fields) => fields.iter().any(|(_, f)| contains_param(f, pred)),
         Type::Union(members) => members.iter().any(|m| contains_param(m, pred)),
         Type::Fn { params, ret, .. } => params.iter().any(|p| contains_param(p, pred)) || contains_param(ret, pred),
@@ -283,6 +291,7 @@ pub fn widen(t: &Type) -> Type {
     match t {
         Type::Lit(v) => base_of(v),
         Type::Array(elem) => arr(widen(elem)),
+        Type::Tuple(items) => Type::Tuple(items.iter().map(widen).collect()),
         Type::Object(fields) => Type::Object(fields.iter().map(|(n, ft)| (n.clone(), widen(ft))).collect()),
         Type::Union(members) => mk_union(members.iter().map(widen).collect()),
         _ => t.clone(),
@@ -293,6 +302,7 @@ pub fn has_never_array(t: &Type) -> bool {
     match t {
         Type::Array(elem) => matches!(**elem, Type::Never) || has_never_array(elem),
         Type::Object(fields) => fields.iter().any(|(_, f)| has_never_array(f)),
+        Type::Tuple(items) => items.iter().any(has_never_array),
         Type::Union(members) => members.iter().any(has_never_array),
         _ => false,
     }
@@ -302,7 +312,7 @@ pub fn obj_get<'a>(fields: &'a [(String, Type)], name: &str) -> Option<&'a Type>
     fields.iter().find(|(n, _)| n == name).map(|(_, t)| t)
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct TypeCtx {
     pub aliases: HashMap<String, Alias>,
 }
@@ -405,6 +415,9 @@ impl TypeCtx {
             Type::Lit(dv) => matches!(&src, Type::Lit(sv) if sv == dv),
             Type::Void | Type::Range => src == dst,
             Type::Array(de) => matches!(&src, Type::Array(se) if self.assignable(se, de, seen)),
+            Type::Tuple(ditems) => matches!(&src, Type::Tuple(sitems)
+                if sitems.len() == ditems.len()
+                    && sitems.iter().zip(ditems).all(|(s, d)| self.assignable(s, d, seen))),
             Type::Object(dfields) => {
                 let Type::Object(sfields) = &src else { return false };
                 dfields.iter().all(|(name, ft)| obj_get(sfields, name).is_some_and(|sf| self.assignable(sf, ft, seen)))

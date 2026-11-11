@@ -1,15 +1,13 @@
 #[cfg(not(target_os = "linux"))]
 compile_error!("por ahora uwu sólo soporta Linux");
 
-pub mod ast;
 pub mod checker;
 pub mod diagnostics;
 pub mod interpreter;
-pub mod lexer;
 pub mod modules;
-mod native;
-pub mod parser;
+pub mod repl;
 pub mod stdlib;
+pub mod syntax;
 pub mod types;
 
 use checker::Checker;
@@ -19,6 +17,9 @@ use modules::{Module, SourceFile};
 use std::path::{Path, PathBuf};
 
 pub use diagnostics::format_diagnostic;
+
+/// El intérprete es recursivo: corre en un hilo con esta pila.
+pub const STACK_SIZE: usize = 256 * 1024 * 1024;
 
 pub struct RunResult {
     /// Errores y warnings de compilación.
@@ -39,7 +40,7 @@ pub struct Compiled {
 }
 
 fn compile_entry(source: String, name: String, path: Option<PathBuf>, dir: PathBuf) -> Compiled {
-    let loaded = modules::load(source, name, path, dir);
+    let loaded = modules::load(source, name, path, dir, 0);
     let mut checker = Checker::new();
     let mut diagnostics = loaded.diagnostics;
     if let Some(mods) = &loaded.modules {
@@ -97,12 +98,12 @@ fn execute(
     // El intérprete es recursivo: le damos una pila grande y un límite de
     // profundidad propio para reportar `desbordamiento de pila` como pánico.
     let modules = &modules;
-    let checker = &checker;
+    let Checker { tc, pattern_types, .. } = checker;
     let result = std::thread::scope(|scope| {
         std::thread::Builder::new()
-            .stack_size(256 * 1024 * 1024)
+            .stack_size(STACK_SIZE)
             .spawn_scoped(scope, move || {
-                let mut interp = Interpreter::new(out, &checker.tc, &checker.pattern_types, script_args);
+                let mut interp = Interpreter::new(out, tc, pattern_types, script_args);
                 interp.run(modules)
             })
             .expect("no se pudo crear el hilo del intérprete")

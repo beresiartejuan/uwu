@@ -1,4 +1,4 @@
-use crate::lexer::Span;
+use super::Span;
 
 // ---------- Literales ----------
 
@@ -16,6 +16,7 @@ pub enum TypeNode {
     Name { name: String, args: Vec<TypeNode>, span: Span },
     Lit { value: LitVal, span: Span },
     Array { elem: Box<TypeNode>, span: Span },
+    Tuple { items: Vec<TypeNode>, span: Span },
     Object { fields: Vec<(String, TypeNode)>, span: Span },
     Union { members: Vec<TypeNode>, span: Span },
     Fn { params: Vec<TypeNode>, ret: Box<TypeNode>, span: Span },
@@ -27,6 +28,7 @@ impl TypeNode {
             TypeNode::Name { span, .. }
             | TypeNode::Lit { span, .. }
             | TypeNode::Array { span, .. }
+            | TypeNode::Tuple { span, .. }
             | TypeNode::Object { span, .. }
             | TypeNode::Union { span, .. }
             | TypeNode::Fn { span, .. } => *span,
@@ -53,6 +55,11 @@ pub enum Expr {
         value: String,
         span: Span,
     },
+    /// `"hola {nombre}"`
+    Template {
+        parts: Vec<StrPart>,
+        span: Span,
+    },
     Bool {
         value: bool,
         span: Span,
@@ -68,6 +75,11 @@ pub enum Expr {
         span: Span,
     },
     Array {
+        items: Vec<Expr>,
+        span: Span,
+    },
+    /// `(1, "a")`
+    Tuple {
         items: Vec<Expr>,
         span: Span,
     },
@@ -133,7 +145,7 @@ pub enum Expr {
         span: Span,
     },
     For {
-        name: String,
+        pattern: Pattern,
         iter: Box<Expr>,
         body: Block,
         span: Span,
@@ -165,10 +177,12 @@ impl Expr {
         match self {
             Expr::Num { span, .. }
             | Expr::Str { span, .. }
+            | Expr::Template { span, .. }
             | Expr::Bool { span, .. }
             | Expr::Ident { span, .. }
             | Expr::Path { span, .. }
             | Expr::Array { span, .. }
+            | Expr::Tuple { span, .. }
             | Expr::Object { span, .. }
             | Expr::Unary { span, .. }
             | Expr::Binary { span, .. }
@@ -205,6 +219,12 @@ impl Expr {
 }
 
 #[derive(Clone, Debug)]
+pub enum StrPart {
+    Text(String),
+    Expr(Box<Expr>),
+}
+
+#[derive(Clone, Debug)]
 pub struct Block {
     pub stmts: Vec<Stmt>,
     /// Última expresión sin `;` → valor del bloque.
@@ -222,6 +242,14 @@ pub enum Stmt {
         init: Expr,
         span: Span,
     },
+    /// `let (a, b) = ...;` o `let { x, y } = ...;`
+    Destructure {
+        exported: bool,
+        pattern: Pattern,
+        ty: Option<TypeNode>,
+        init: Expr,
+        span: Span,
+    },
     Expr {
         expr: Expr,
         semi: bool,
@@ -230,6 +258,7 @@ pub enum Stmt {
     Fn(FnDecl),
     Type(TypeDecl),
     Import(ImportDecl),
+    Namespace(NamespaceDecl),
     /// `using namespace fs;` (name = None) o `using fs::leer;` (name = Some).
     Using {
         ns: String,
@@ -241,10 +270,14 @@ pub enum Stmt {
 impl Stmt {
     pub fn span(&self) -> Span {
         match self {
-            Stmt::Let { span, .. } | Stmt::Expr { span, .. } | Stmt::Using { span, .. } => *span,
+            Stmt::Let { span, .. }
+            | Stmt::Destructure { span, .. }
+            | Stmt::Expr { span, .. }
+            | Stmt::Using { span, .. } => *span,
             Stmt::Fn(d) => d.span,
             Stmt::Type(d) => d.span,
             Stmt::Import(d) => d.span,
+            Stmt::Namespace(d) => d.span,
         }
     }
 }
@@ -266,6 +299,15 @@ pub struct ImportDecl {
     pub target: ImportTarget,
     /// `export import ...`: quien importe este archivo también recibe lo importado.
     pub reexport: bool,
+    pub span: Span,
+}
+
+/// `namespace geo { ... }`: agrupa declaraciones bajo `geo::`.
+#[derive(Clone, Debug)]
+pub struct NamespaceDecl {
+    pub exported: bool,
+    pub name: String,
+    pub stmts: Vec<Stmt>,
     pub span: Span,
 }
 
@@ -302,9 +344,10 @@ pub struct TypeDecl {
 #[derive(Clone, Debug)]
 pub enum Pattern {
     Wild { id: usize, ty: Option<TypeNode>, span: Span },
-    Bind { id: usize, name: String, ty: Option<TypeNode>, span: Span },
+    Bind { id: usize, name: String, mutable: bool, ty: Option<TypeNode>, span: Span },
     Lit { value: LitVal, span: Span },
     Object { fields: Vec<(String, Pattern)>, span: Span },
+    Tuple { items: Vec<Pattern>, span: Span },
 }
 
 impl Pattern {
@@ -313,7 +356,18 @@ impl Pattern {
             Pattern::Wild { span, .. }
             | Pattern::Bind { span, .. }
             | Pattern::Lit { span, .. }
-            | Pattern::Object { span, .. } => *span,
+            | Pattern::Object { span, .. }
+            | Pattern::Tuple { span, .. } => *span,
+        }
+    }
+
+    /// Las variables que declara el patrón, en orden.
+    pub fn names(&self) -> Vec<&str> {
+        match self {
+            Pattern::Bind { name, .. } => vec![name],
+            Pattern::Object { fields, .. } => fields.iter().flat_map(|(_, p)| p.names()).collect(),
+            Pattern::Tuple { items, .. } => items.iter().flat_map(Pattern::names).collect(),
+            Pattern::Wild { .. } | Pattern::Lit { .. } => vec![],
         }
     }
 }

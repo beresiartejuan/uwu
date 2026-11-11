@@ -6,11 +6,11 @@
 //! - `import "util.uwu";`      archivo, relativo al que importa (`.uwu` es opcional)
 //! - `import geometria;`       busca `geometria.uwu` junto al que importa y en `$UWU_PATH`
 
-use crate::ast::{ImportDecl, ImportTarget, Program, Stmt};
 use crate::diagnostics::{Diagnostic, Severity};
-use crate::lexer::{tokenize, Span};
-use crate::parser::parse;
 use crate::stdlib;
+use crate::syntax::ast::{ImportDecl, ImportTarget, Program, Stmt};
+use crate::syntax::lexer::{tokenize, Span};
+use crate::syntax::parser::parse;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -49,6 +49,8 @@ pub struct Loaded {
 }
 
 struct Loader {
+    /// Índice global del primer archivo de esta carga (el REPL hace varias).
+    first_file: usize,
     files: Vec<SourceFile>,
     modules: Vec<Module>,
     by_path: HashMap<PathBuf, usize>,
@@ -60,8 +62,10 @@ struct Loader {
 /// Carga el archivo de entrada y todo lo que importa.
 /// `path` es su ruta en disco (None si el código no viene de un archivo);
 /// `dir` es la carpeta desde la que se resuelven sus imports.
-pub fn load(source: String, name: String, path: Option<PathBuf>, dir: PathBuf) -> Loaded {
+/// `first_file` es el índice que recibe el primer archivo en los `Span`.
+pub fn load(source: String, name: String, path: Option<PathBuf>, dir: PathBuf, first_file: usize) -> Loaded {
     let mut loader = Loader {
+        first_file,
         files: Vec::new(),
         modules: Vec::new(),
         by_path: HashMap::new(),
@@ -92,9 +96,10 @@ fn display_path(p: &Path) -> String {
 
 impl Loader {
     fn load_file(&mut self, source: String, name: String, canon: Option<PathBuf>, dir: PathBuf) -> Result<usize, ()> {
-        let file = self.files.len();
+        let file = self.first_file + self.files.len();
         self.files.push(SourceFile { name, source });
-        let program = match tokenize(&self.files[file].source, file).and_then(|t| parse(t, file)) {
+        let source = &self.files.last().unwrap().source;
+        let program = match tokenize(source, file).and_then(|t| parse(t, file)) {
             Ok(p) => p,
             Err(e) => {
                 self.diagnostics.extend(e.diagnostics);

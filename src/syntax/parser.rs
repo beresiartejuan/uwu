@@ -1,6 +1,6 @@
-use crate::ast::*;
+use super::ast::*;
+use super::lexer::{Span, Token, TokenKind};
 use crate::diagnostics::UwuError;
-use crate::lexer::{Span, Token, TokenKind};
 
 type PResult<T> = Result<T, UwuError>;
 
@@ -23,6 +23,8 @@ fn describe(t: &Token) -> String {
     match t.kind {
         TokenKind::Eof => "el final del archivo".into(),
         TokenKind::Str => format!("`\"{}\"`", t.value),
+        TokenKind::StrHead => format!("`\"{}{{`", t.value),
+        TokenKind::StrMid | TokenKind::StrTail => "`}`".into(),
         _ => format!("`{}`", t.value),
     }
 }
@@ -128,6 +130,10 @@ impl Parser {
         t.kind == TokenKind::Ident && t.value == value
     }
 
+    fn at_using(&self) -> bool {
+        self.at_ident("using", 0) && (self.peek(1).kind == TokenKind::Ident || self.at("namespace", 1))
+    }
+
     fn at_export_module(&self) -> bool {
         self.at("export", 0) && self.at_ident("module", 1)
     }
@@ -177,10 +183,15 @@ impl Parser {
         }
         if self.at("let", 0) {
             let mut stmt = self.parse_let()?;
-            if let Stmt::Let { exported, .. } = &mut stmt {
+            if let Stmt::Let { exported, .. } | Stmt::Destructure { exported, .. } = &mut stmt {
                 *exported = true;
             }
             return Ok(stmt);
+        }
+        if self.at("namespace", 0) {
+            let mut decl = self.parse_namespace()?;
+            decl.exported = true;
+            return Ok(Stmt::Namespace(decl));
         }
         if self.at("fn", 0) {
             let mut decl = self.parse_fn()?;
@@ -194,7 +205,7 @@ impl Parser {
         }
         self.fail(
             format!(
-                "se esperaba `fn`, `let`, `type` o `import` después de `export`, se encontró {}",
+                "se esperaba `fn`, `let`, `type`, `namespace` o `import` después de `export`, se encontró {}",
                 describe(self.peek(0))
             ),
             self.peek(0).span,
@@ -204,8 +215,7 @@ impl Parser {
 
     fn parse_using(&mut self) -> PResult<Stmt> {
         let start = self.next().span; // `using`
-        if self.at_ident("namespace", 0) && self.peek(1).kind == TokenKind::Ident {
-            self.next();
+        if self.eat("namespace") {
             let ns = self.ident("el nombre de un módulo")?;
             self.expect(";", "al final del `using`")?;
             return Ok(Stmt::Using { ns: ns.value, name: None, span: Span::join(start, ns.span) });
@@ -215,6 +225,52 @@ impl Parser {
         let name = self.ident("el nombre a traer")?;
         self.expect(";", "al final del `using`")?;
         Ok(Stmt::Using { ns: ns.value, name: Some(name.value), span: Span::join(start, name.span) })
+    }
+
+    fn parse_namespace(&mut self) -> PResult<NamespaceDecl> {
+        let start = self.expect("namespace", "")?.span;
+        let name = self.ident("el nombre del namespace")?;
+        self.expect("{", "para abrir el namespace")?;
+        let mut stmts = Vec::new();
+        while !self.at("}", 0) {
+            let t = self.peek(0).clone();
+            if self.eat(";") {
+                continue;
+            }
+            if self.at("fn", 0) {
+                stmts.push(Stmt::Fn(self.parse_fn()?));
+            } else if self.at("let", 0) {
+                stmts.push(self.parse_let()?);
+            } else if self.at("type", 0) {
+                stmts.push(Stmt::Type(self.parse_type_decl()?));
+            } else if self.at_using() {
+                stmts.push(self.parse_using()?);
+            } else if self.at("export", 0) {
+                return self.fail(
+                    "dentro de un `namespace` no se usa `export`".into(),
+                    t.span,
+                    Some(format!(
+                        "para exportar sus miembros, exportá el namespace entero: `export namespace {}`",
+                        name.value
+                    )),
+                );
+            } else if self.at("namespace", 0) {
+                return self.fail("los `namespace` no se pueden anidar".into(), t.span, None);
+            } else if t.kind == TokenKind::Eof {
+                return self.fail("falta `}` para cerrar el namespace".into(), start, None);
+            } else {
+                return self.fail(
+                    format!(
+                        "dentro de un `namespace` sólo puede haber `fn`, `let`, `type` y `using`, se encontró {}",
+                        describe(&t)
+                    ),
+                    t.span,
+                    Some("el código suelto va fuera del namespace".into()),
+                );
+            }
+        }
+        self.expect("}", "para cerrar el namespace")?;
+        Ok(NamespaceDecl { exported: false, name: name.value, stmts, span: Span::join(start, name.span) })
     }
 
     fn is_end(&self, end: &str) -> bool {
@@ -229,7 +285,7 @@ impl Parser {
             if self.eat(";") {
                 continue;
             }
-            if self.at("import", 0) || self.at("export", 0) {
+            if self.at("import", 0) || self.at("export", 0) || self.at("namespace", 0) {
                 if !top_level {
                     let kw = self.peek(0).value.clone();
                     return self.fail(
@@ -241,13 +297,15 @@ impl Parser {
                 let stmt = if self.at("import", 0) {
                     let start = self.peek(0).span;
                     self.parse_import(false, start)?
+                } else if self.at("namespace", 0) {
+                    Stmt::Namespace(self.parse_namespace()?)
                 } else {
                     self.parse_export()?
                 };
                 stmts.push(stmt);
                 continue;
             }
-            if self.at_ident("using", 0) && self.peek(1).kind == TokenKind::Ident {
+            if self.at_using() {
                 stmts.push(self.parse_using()?);
                 continue;
             }
@@ -302,6 +360,22 @@ impl Parser {
     fn parse_let(&mut self) -> PResult<Stmt> {
         let start = self.expect("let", "")?.span;
         let mutable = self.eat("mut");
+        if self.at("(", 0) || self.at("{", 0) {
+            if mutable {
+                return self.fail(
+                    "`mut` va dentro del patrón, en cada variable".into(),
+                    self.prev(),
+                    Some("escribilo así: `let (mut a, b) = ...;`".into()),
+                );
+            }
+            let pattern = self.parse_pattern()?;
+            let ty = if self.eat(":") { Some(self.parse_type()?) } else { None };
+            self.expect("=", "después del patrón")?;
+            let init = self.parse_expr()?;
+            self.expect(";", "al final del `let`")?;
+            let span = Span::join(start, init.span());
+            return Ok(Stmt::Destructure { exported: false, pattern, ty, init, span });
+        }
         let name = self.ident("el nombre de la variable")?;
         let ty = if self.eat(":") { Some(self.parse_type()?) } else { None };
         self.expect("=", &format!("después de `{}`", name.value))?;
@@ -378,7 +452,7 @@ impl Parser {
         let left = self.parse_binary(0)?;
         let t = self.peek(0);
         if t.kind == TokenKind::Op && ASSIGN_OPS.contains(&t.value.as_str()) {
-            if !matches!(left, Expr::Ident { .. } | Expr::Member { .. } | Expr::Index { .. }) {
+            if !matches!(left, Expr::Ident { .. } | Expr::Path { .. } | Expr::Member { .. } | Expr::Index { .. }) {
                 return self.fail("no se puede asignar a esta expresión".into(), left.span(), None);
             }
             let op = self.next().value;
@@ -470,6 +544,21 @@ impl Parser {
                 self.next();
                 let member = self.next();
                 expr = Expr::Path { ns, name: member.value, span: Span::join(ns_span, member.span) };
+            } else if self.at(".", 0) && self.peek(1).kind == TokenKind::Num {
+                // t.0, y también t.0.1 (que el lexer lee como el número `0.1`)
+                self.next();
+                let n = self.next();
+                for part in n.value.split('.') {
+                    if part.parse::<usize>().is_err() {
+                        return self.fail(
+                            format!("`{}` no es un índice de tupla válido", n.value),
+                            n.span,
+                            Some("los elementos de una tupla se acceden con `t.0`, `t.1`, ...".into()),
+                        );
+                    }
+                    let span = Span::join(expr.span(), n.span);
+                    expr = Expr::Member { object: Box::new(expr), name: part.to_string(), span };
+                }
             } else if self.at(".", 0) {
                 self.next();
                 let name = self.ident("el nombre de un campo o método")?;
@@ -509,6 +598,7 @@ impl Parser {
                 self.next();
                 return Ok(Expr::Str { value: t.value, span: t.span });
             }
+            TokenKind::StrHead => return self.parse_template(),
             TokenKind::Ident => {
                 self.next();
                 return Ok(Expr::Ident { name: t.value, span: t.span });
@@ -525,9 +615,18 @@ impl Parser {
             }
             "(" => {
                 self.next();
-                let e = self.parse_expr()?;
-                self.expect(")", "")?;
-                Ok(e)
+                let first = self.parse_expr()?;
+                if !self.at(",", 0) {
+                    self.expect(")", "")?;
+                    return Ok(first);
+                }
+                // (a, b): tupla. Con un solo elemento lleva coma, como en Rust: (a,)
+                let mut items = vec![first];
+                while self.eat(",") && !self.at(")", 0) {
+                    items.push(self.parse_expr()?);
+                }
+                let close = self.expect(")", "para cerrar la tupla")?;
+                Ok(Expr::Tuple { items, span: Span::join(t.span, close.span) })
             }
             "[" => {
                 self.next();
@@ -567,6 +666,45 @@ impl Parser {
             }
             _ => self.fail(format!("se esperaba una expresión, se encontró {}", describe(&t)), t.span, None),
         }
+    }
+
+    fn parse_template(&mut self) -> PResult<Expr> {
+        let head = self.next();
+        let mut parts = Vec::new();
+        if !head.value.is_empty() {
+            parts.push(StrPart::Text(head.value));
+        }
+        loop {
+            let t = self.peek(0).clone();
+            if matches!(t.kind, TokenKind::StrMid | TokenKind::StrTail) {
+                return self.fail(
+                    "falta una expresión dentro de `{}`".into(),
+                    t.span,
+                    Some("para escribir llaves literales en un string usá `{{` y `}}`".into()),
+                );
+            }
+            parts.push(StrPart::Expr(Box::new(self.parse_expr()?)));
+            let t = self.peek(0).clone();
+            match t.kind {
+                TokenKind::StrMid | TokenKind::StrTail => {
+                    self.next();
+                    if !t.value.is_empty() {
+                        parts.push(StrPart::Text(t.value));
+                    }
+                    if t.kind == TokenKind::StrTail {
+                        break;
+                    }
+                }
+                _ => {
+                    return self.fail(
+                        format!("se esperaba `}}` para cerrar la interpolación, se encontró {}", describe(&t)),
+                        t.span,
+                        None,
+                    )
+                }
+            }
+        }
+        Ok(Expr::Template { parts, span: Span::join(head.span, self.prev()) })
     }
 
     fn parse_object(&mut self) -> PResult<Expr> {
@@ -620,12 +758,17 @@ impl Parser {
             }
             "for" => {
                 self.next();
-                let name = self.ident("el nombre de la variable del `for`")?;
+                let pattern = if self.at("(", 0) || self.at("{", 0) {
+                    self.parse_pattern()?
+                } else {
+                    let name = self.ident("el nombre de la variable del `for`")?;
+                    Pattern::Bind { id: self.fresh_id(), name: name.value, mutable: false, ty: None, span: name.span }
+                };
                 self.expect("in", "")?;
                 let iter = self.parse_expr()?;
                 let body = self.parse_block()?;
                 let span = Span::join(t.span, body.span);
-                Ok(Expr::For { name: name.value, iter: Box::new(iter), body, span })
+                Ok(Expr::For { pattern, iter: Box::new(iter), body, span })
             }
             "match" => self.parse_match(),
             _ => self.fail(format!("se esperaba un bloque, se encontró {}", describe(&t)), t.span, None),
@@ -700,6 +843,26 @@ impl Parser {
 
     fn parse_pattern(&mut self) -> PResult<Pattern> {
         let t = self.peek(0).clone();
+        if self.at("mut", 0) {
+            self.next();
+            let name = self.ident("el nombre de la variable")?;
+            let ty = if self.eat(":") { Some(self.parse_type()?) } else { None };
+            return Ok(Pattern::Bind { id: self.fresh_id(), name: name.value, mutable: true, ty, span: name.span });
+        }
+        if self.at("(", 0) {
+            self.next();
+            let first = self.parse_pattern()?;
+            if !self.at(",", 0) {
+                self.expect(")", "")?;
+                return Ok(first);
+            }
+            let mut items = vec![first];
+            while self.eat(",") && !self.at(")", 0) {
+                items.push(self.parse_pattern()?);
+            }
+            let close = self.expect(")", "para cerrar la tupla")?;
+            return Ok(Pattern::Tuple { items, span: Span::join(t.span, close.span) });
+        }
         if t.kind == TokenKind::Ident {
             self.next();
             let ty = if self.eat(":") { Some(self.parse_type()?) } else { None };
@@ -713,7 +876,7 @@ impl Parser {
                     Some(format!("para filtrar por tipo escribí `x: {}`", t.value)),
                 );
             }
-            return Ok(Pattern::Bind { id: self.fresh_id(), name: t.value, ty, span: t.span });
+            return Ok(Pattern::Bind { id: self.fresh_id(), name: t.value, mutable: false, ty, span: t.span });
         }
         if t.kind == TokenKind::Num || t.kind == TokenKind::Str {
             self.next();
@@ -738,11 +901,12 @@ impl Parser {
             self.next();
             let mut fields: Vec<(String, Pattern)> = Vec::new();
             while !self.at("}", 0) {
+                let mutable = self.eat("mut");
                 let name = self.ident("el nombre de un campo")?;
-                let pattern = if self.eat(":") {
+                let pattern = if !mutable && self.eat(":") {
                     self.parse_pattern()?
                 } else {
-                    Pattern::Bind { id: self.fresh_id(), name: name.value.clone(), ty: None, span: name.span }
+                    Pattern::Bind { id: self.fresh_id(), name: name.value.clone(), mutable, ty: None, span: name.span }
                 };
                 fields.push((name.value, pattern));
                 if !self.eat(",") {
@@ -826,8 +990,16 @@ impl Parser {
             }
             self.next();
             let inner = self.parse_type()?;
-            self.expect(")", "")?;
-            return Ok(inner);
+            if !self.at(",", 0) {
+                self.expect(")", "")?;
+                return Ok(inner);
+            }
+            let mut items = vec![inner];
+            while self.eat(",") && !self.at(")", 0) {
+                items.push(self.parse_type()?);
+            }
+            let close = self.expect(")", "para cerrar la tupla")?;
+            return Ok(TypeNode::Tuple { items, span: Span::join(t.span, close.span) });
         }
         if self.at("{", 0) {
             self.next();
@@ -873,6 +1045,12 @@ impl Parser {
         }
         if t.kind == TokenKind::Ident {
             self.next();
+            let mut name = t.value;
+            // geo::Punto: un tipo de un namespace
+            if self.at("::", 0) && self.peek(1).kind == TokenKind::Ident {
+                self.next();
+                name = format!("{}::{}", name, self.next().value);
+            }
             let mut args = Vec::new();
             if self.eat("<") {
                 loop {
@@ -883,7 +1061,7 @@ impl Parser {
                 }
                 self.expect(">", "")?;
             }
-            return Ok(TypeNode::Name { name: t.value, args, span: Span::join(t.span, self.prev()) });
+            return Ok(TypeNode::Name { name, args, span: Span::join(t.span, self.prev()) });
         }
         self.fail(format!("se esperaba un tipo, se encontró {}", describe(&t)), t.span, None)
     }

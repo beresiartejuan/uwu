@@ -10,11 +10,3 @@ readme = "README.md"
 repository = "https://github.com/beresiartejuan/uwu"
 keywords = ["lenguaje", "interprete", "typescript", "rust", "type-checker"]
 categories = ["compilers", "command-line-utilities"]
-
-[[bin]]
-name = "uwu"
-path = "src/main.rs"
-
-[lib]
-name = "uwu"
-path = "src/lib.rs"

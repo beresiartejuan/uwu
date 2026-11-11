@@ -1,239 +1,42 @@
-use crate::ast::*;
+//! El intérprete: recorre el AST ya chequeado y lo ejecuta.
+
 use crate::diagnostics::RuntimeError;
-use crate::lexer::Span;
 use crate::modules::{Dep, Module};
-use crate::stdlib::{self, builtin_name, BuiltinFn, Member, GLOBALS};
-use crate::types::{fmt_num, quote_str, Type, TypeCtx};
+use crate::stdlib::{self, GLOBALS};
+use crate::syntax::ast::*;
+use crate::syntax::Span;
+use crate::types::{fmt_num, Type, TypeCtx};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+mod method;
+mod native;
+mod value;
+
+pub use value::*;
+
 const MAX_DEPTH: usize = 10_000;
 
-// ======================= valores =======================
-
-pub struct ClosureV<'p> {
-    pub name: String,
-    pub params: Vec<String>,
-    pub body: FnBody<'p>,
-    pub env: Rc<Env<'p>>,
-}
-
-#[derive(Clone, Copy)]
-pub enum FnBody<'p> {
-    Block(&'p Block),
-    Expr(&'p Expr),
-}
-
-#[derive(Clone)]
-pub enum Value<'p> {
-    Num(f64),
-    Str(Rc<String>),
-    Bool(bool),
-    Unit,
-    Array(Rc<RefCell<Vec<Value<'p>>>>),
-    Object(Rc<RefCell<Vec<(String, Value<'p>)>>>),
-    Range(f64, f64),
-    Closure(Rc<ClosureV<'p>>),
-    Builtin(BuiltinFn),
-}
-
-pub(crate) fn vstr<'p>(s: impl Into<String>) -> Value<'p> {
-    Value::Str(Rc::new(s.into()))
-}
-
-pub(crate) fn varr<'p>(items: Vec<Value<'p>>) -> Value<'p> {
-    Value::Array(Rc::new(RefCell::new(items)))
-}
-
-pub(crate) fn vobj<'p>(fields: Vec<(&str, Value<'p>)>) -> Value<'p> {
-    Value::Object(Rc::new(RefCell::new(fields.into_iter().map(|(n, v)| (n.to_string(), v)).collect())))
-}
-
-fn member_value<'p>(m: Member) -> Value<'p> {
-    match m {
-        Member::Fn(b) => Value::Builtin(b),
-        Member::Num(n) => Value::Num(n),
-        Member::Str(s) => vstr(s),
-    }
-}
-
-pub struct Env<'p> {
-    vars: RefCell<HashMap<String, Value<'p>>>,
-    parent: Option<Rc<Env<'p>>>,
-}
-
-impl<'p> Env<'p> {
-    pub fn new(parent: Option<Rc<Env<'p>>>) -> Rc<Self> {
-        Rc::new(Self { vars: RefCell::new(HashMap::new()), parent })
-    }
-
-    fn find(self: &Rc<Self>, name: &str) -> Option<Rc<Env<'p>>> {
-        let mut env = Rc::clone(self);
-        loop {
-            if env.vars.borrow().contains_key(name) {
-                return Some(env);
-            }
-            let parent = env.parent.clone()?;
-            env = parent;
-        }
-    }
-
-    fn get(self: &Rc<Self>, name: &str, span: Span) -> Result<Value<'p>, Control<'p>> {
-        match self.find(name) {
-            Some(env) => Ok(env.vars.borrow().get(name).cloned().unwrap_or(Value::Unit)),
-            None => Err(rt(format!("`{}` se usó antes de ser inicializada", name), span)),
-        }
-    }
-
-    fn set(self: &Rc<Self>, name: &str, value: Value<'p>, span: Span) -> Result<(), Control<'p>> {
-        match self.find(name) {
-            Some(env) => {
-                env.vars.borrow_mut().insert(name.to_string(), value);
-                Ok(())
-            }
-            None => Err(rt(format!("`{}` se usó antes de ser inicializada", name), span)),
-        }
-    }
-
-    fn define(&self, name: &str, value: Value<'p>) {
-        self.vars.borrow_mut().insert(name.to_string(), value);
-    }
-}
-
-pub enum Control<'p> {
-    Return(Value<'p>),
-    Break,
-    Continue,
-    Err(RuntimeError),
-}
-
-pub(crate) fn rt<'p>(message: impl Into<String>, span: Span) -> Control<'p> {
-    Control::Err(RuntimeError::new(message, span))
-}
-
-pub(crate) type EResult<'p> = Result<Value<'p>, Control<'p>>;
-
-// ======================= utilidades =======================
-
-pub fn display(v: &Value, top: bool) -> String {
-    match v {
-        Value::Str(s) => {
-            if top {
-                s.to_string()
-            } else {
-                quote_str(s)
-            }
-        }
-        Value::Num(n) => fmt_num(*n),
-        Value::Bool(b) => b.to_string(),
-        Value::Unit => "()".into(),
-        Value::Array(items) => {
-            let inner: Vec<String> = items.borrow().iter().map(|x| display(x, false)).collect();
-            format!("[{}]", inner.join(", "))
-        }
-        Value::Object(fields) => {
-            let fields = fields.borrow();
-            if fields.is_empty() {
-                "{}".into()
-            } else {
-                let inner: Vec<String> = fields.iter().map(|(k, x)| format!("{}: {}", k, display(x, false))).collect();
-                format!("{{ {} }}", inner.join(", "))
-            }
-        }
-        Value::Range(start, end) => format!("{}..{}", fmt_num(*start), fmt_num(*end)),
-        Value::Closure(c) => format!("<fn {}>", c.name),
-        Value::Builtin(b) => format!("<fn {}>", builtin_name(*b)),
-    }
-}
-
-pub fn deep_equal<'p>(a: &Value<'p>, b: &Value<'p>) -> bool {
-    match (a, b) {
-        (Value::Array(x), Value::Array(y)) => {
-            let x = x.borrow();
-            let y = y.borrow();
-            x.len() == y.len() && x.iter().zip(y.iter()).all(|(a, b)| deep_equal(a, b))
-        }
-        (Value::Object(x), Value::Object(y)) => {
-            let x = x.borrow();
-            let y = y.borrow();
-            x.len() == y.len()
-                && x.iter().all(|(k, v)| y.iter().find(|(n, _)| n == k).is_some_and(|(_, w)| deep_equal(v, w)))
-        }
-        (Value::Range(a1, a2), Value::Range(b1, b2)) => a1 == b1 && a2 == b2,
-        (Value::Num(x), Value::Num(y)) => x == y,
-        (Value::Str(x), Value::Str(y)) => x == y,
-        (Value::Bool(x), Value::Bool(y)) => x == y,
-        (Value::Unit, Value::Unit) => true,
-        (Value::Closure(x), Value::Closure(y)) => Rc::ptr_eq(x, y),
-        (Value::Builtin(x), Value::Builtin(y)) => x == y,
-        _ => false,
-    }
-}
-
-fn to_base(n: i64, base: u32) -> String {
-    let mut digits = Vec::new();
-    let mut x = n.unsigned_abs();
-    loop {
-        digits.push(std::char::from_digit((x % base as u64) as u32, base).unwrap());
-        x /= base as u64;
-        if x == 0 {
-            break;
-        }
-    }
-    if n < 0 {
-        digits.push('-');
-    }
-    digits.iter().rev().collect()
-}
-
-/// `slice(desde, hasta)` como en JS: los negativos cuentan desde el final.
-fn slice_bounds(args: &[Value], len: usize) -> (usize, usize) {
-    let idx = |i: usize, default: usize| -> usize {
-        match args.get(i) {
-            Some(Value::Num(n)) if *n < 0.0 => (len as f64 + n.trunc()).max(0.0) as usize,
-            Some(Value::Num(n)) => (n.trunc() as usize).min(len),
-            _ => default,
-        }
-    };
-    let a = idx(0, 0);
-    let b = idx(1, len);
-    (a.min(b), b)
-}
-
-fn obj_field<'p>(fields: &[(String, Value<'p>)], name: &str) -> Option<Value<'p>> {
-    fields.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone())
-}
-
-fn obj_set<'p>(fields: &mut Vec<(String, Value<'p>)>, name: &str, value: Value<'p>) {
-    if let Some(entry) = fields.iter_mut().find(|(n, _)| n == name) {
-        entry.1 = value;
-    } else {
-        fields.push((name.to_string(), value));
-    }
-}
-
-// ======================= intérprete =======================
-
 pub struct Interpreter<'p, 'o> {
-    pub(crate) out: &'o mut dyn FnMut(&str),
-    tc: &'p TypeCtx,
-    pattern_types: &'p HashMap<usize, Type>,
-    pub(crate) script_args: &'p [String],
+    out: &'o mut dyn FnMut(&str),
+    tc: TypeCtx,
+    pattern_types: HashMap<usize, Type>,
+    script_args: &'p [String],
     depth: usize,
     /// Estado del generador de `math::aleatorio` (xorshift64*).
-    pub(crate) rng: u64,
+    rng: u64,
     /// Para `time::reloj()`.
-    pub(crate) start: std::time::Instant,
+    start: std::time::Instant,
     /// Procesos de `proc::lanzar`, para poder hacer `proc::esperar(pid)`.
-    pub(crate) children: HashMap<u32, std::process::Child>,
+    children: HashMap<u32, std::process::Child>,
 }
 
 impl<'p, 'o> Interpreter<'p, 'o> {
     pub fn new(
         out: &'o mut dyn FnMut(&str),
-        tc: &'p TypeCtx,
-        pattern_types: &'p HashMap<usize, Type>,
+        tc: TypeCtx,
+        pattern_types: HashMap<usize, Type>,
         script_args: &'p [String],
     ) -> Self {
         Self {
@@ -242,7 +45,7 @@ impl<'p, 'o> Interpreter<'p, 'o> {
             pattern_types,
             script_args,
             depth: 0,
-            rng: crate::native::initial_seed(),
+            rng: native::initial_seed(),
             start: std::time::Instant::now(),
             children: HashMap::new(),
         }
@@ -251,14 +54,51 @@ impl<'p, 'o> Interpreter<'p, 'o> {
     /// Ejecuta los módulos en el orden de `modules::load`: cada uno ve lo que
     /// exportan sus dependencias. Al final corre `main` del archivo de entrada.
     pub fn run(&mut self, modules: &'p [Module]) -> Result<(), RuntimeError> {
+        let globals = Self::global_env();
+        let env = Env::new(Some(Rc::clone(&globals)));
+        self.run_modules(modules, &globals, &env, true).map(|_| ())
+    }
+
+    /// El entorno con las funciones del prelude (`print`, `panic`, `assert`).
+    pub fn global_env() -> Rc<Env<'p>> {
         let globals = Env::new(None);
         for (name, b) in GLOBALS {
             globals.define(name, Value::Builtin(*b));
         }
-        let result = (|| -> Result<(), Control<'p>> {
+        globals
+    }
+
+    /// REPL: los tipos cambian con cada entrada.
+    pub fn set_types(&mut self, tc: TypeCtx, pattern_types: HashMap<usize, Type>) {
+        self.tc = tc;
+        self.pattern_types = pattern_types;
+    }
+
+    /// REPL: ejecuta una entrada en `env`, que se conserva entre entradas.
+    /// Devuelve el valor de la última expresión, si la entrada termina en una.
+    pub fn run_repl(
+        &mut self,
+        modules: &'p [Module],
+        globals: &Rc<Env<'p>>,
+        env: &Rc<Env<'p>>,
+    ) -> Result<Option<String>, RuntimeError> {
+        let v = self.run_modules(modules, globals, env, false)?;
+        Ok(v.filter(|v| !matches!(v, Value::Unit)).map(|v| display(&v, false)))
+    }
+
+    fn run_modules(
+        &mut self,
+        modules: &'p [Module],
+        globals: &Rc<Env<'p>>,
+        entry_env: &Rc<Env<'p>>,
+        call_main: bool,
+    ) -> Result<Option<Value<'p>>, RuntimeError> {
+        let result = (|| -> Result<Option<Value<'p>>, Control<'p>> {
             let mut exports: Vec<Vec<(String, Value<'p>)>> = Vec::with_capacity(modules.len());
+            let mut last = None;
             for (i, m) in modules.iter().enumerate() {
-                let env = Env::new(Some(Rc::clone(&globals)));
+                let is_entry = i + 1 == modules.len();
+                let env = if is_entry { Rc::clone(entry_env) } else { Env::new(Some(Rc::clone(globals))) };
                 for d in &m.deps {
                     if let Dep::File(j) = d.dep {
                         for (name, v) in &exports[j] {
@@ -269,19 +109,31 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 let stmts = &m.program.stmts;
                 self.hoist(stmts, &env);
                 for s in stmts {
-                    self.exec_stmt(s, &env)?;
+                    match s {
+                        Stmt::Expr { expr, semi: false, .. } if is_entry => last = Some(self.eval(expr, &env)?),
+                        s => {
+                            last = None;
+                            self.exec_stmt(s, &env)?;
+                        }
+                    }
                 }
 
                 let mut ex: Vec<(String, Value<'p>)> = Vec::new();
                 for s in stmts {
-                    let (name, span) = match s {
-                        Stmt::Let { exported: true, name, span, .. } => (name, *span),
-                        Stmt::Fn(d) if d.exported => (&d.name, d.span),
+                    let (names, span): (Vec<String>, Span) = match s {
+                        Stmt::Let { exported: true, name, span, .. } => (vec![name.clone()], *span),
+                        Stmt::Destructure { exported: true, pattern, span, .. } => {
+                            (pattern.names().into_iter().map(String::from).collect(), *span)
+                        }
+                        Stmt::Fn(d) if d.exported => (vec![d.name.clone()], d.span),
+                        Stmt::Namespace(n) if n.exported => (vec![ns_key(&n.name)], n.span),
                         _ => continue,
                     };
-                    let v = env.get(name, span)?;
-                    ex.retain(|(n, _)| n != name);
-                    ex.push((name.clone(), v));
+                    for name in names {
+                        let v = env.get(&name, span)?;
+                        ex.retain(|(n, _)| *n != name);
+                        ex.push((name, v));
+                    }
                 }
                 for d in m.deps.iter().filter(|d| d.reexport) {
                     if let Dep::File(j) = d.dep {
@@ -290,7 +142,7 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 }
                 exports.push(ex);
 
-                if i + 1 == modules.len() {
+                if is_entry && call_main {
                     let main = stmts.iter().find_map(|s| match s {
                         Stmt::Fn(d) if d.name == "main" => Some(d),
                         _ => None,
@@ -301,12 +153,12 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                     }
                 }
             }
-            Ok(())
+            Ok(last)
         })();
         match result {
-            Ok(()) => Ok(()),
+            Ok(v) => Ok(v),
             Err(Control::Err(e)) => Err(e),
-            Err(Control::Return(_)) | Err(Control::Break) | Err(Control::Continue) => Ok(()),
+            Err(Control::Return(_)) | Err(Control::Break) | Err(Control::Continue) => Ok(None),
         }
     }
 
@@ -321,6 +173,12 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 };
                 env.define(&d.name, Value::Closure(Rc::new(closure)));
             }
+            if let Stmt::Namespace(n) = s {
+                // sus funciones ven a las demás sin prefijo, y al resto del archivo
+                let ns_env = Env::new(Some(Rc::clone(env)));
+                self.hoist(&n.stmts, &ns_env);
+                env.define(&ns_key(&n.name), Value::Namespace(ns_env));
+            }
         }
     }
 
@@ -331,11 +189,33 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 env.define(name, v);
                 Ok(())
             }
+            Stmt::Destructure { pattern, init, span, .. } => {
+                let v = self.eval(init, env)?;
+                self.bind(pattern, &v, env, *span)
+            }
+            Stmt::Namespace(n) => {
+                if let Some(Value::Namespace(ns_env)) = env.own(&ns_key(&n.name)) {
+                    for s in &n.stmts {
+                        self.exec_stmt(s, &ns_env)?;
+                    }
+                }
+                Ok(())
+            }
             Stmt::Expr { expr, .. } => {
                 self.eval(expr, env)?;
                 Ok(())
             }
             Stmt::Using { ns, name, .. } => {
+                if let Some(Value::Namespace(ns_env)) = env.lookup(&ns_key(ns)) {
+                    let members: Vec<(String, Value<'p>)> =
+                        ns_env.vars.borrow().iter().map(|(n, v)| (n.clone(), v.clone())).collect();
+                    for (n, v) in members {
+                        if name.as_deref().is_none_or(|x| x == n) {
+                            env.define(&n, v);
+                        }
+                    }
+                    return Ok(());
+                }
                 for (n, m) in stdlib::module(ns).unwrap_or_default() {
                     if name.as_deref().is_none_or(|x| x == *n) {
                         env.define(n, member_value(*m));
@@ -344,6 +224,15 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 Ok(())
             }
             _ => Ok(()), // fn y type ya se procesaron
+        }
+    }
+
+    /// `let` / `for` con un patrón: el checker ya garantizó que coincide.
+    fn bind(&mut self, p: &Pattern, v: &Value<'p>, env: &Rc<Env<'p>>, span: Span) -> Result<(), Control<'p>> {
+        if self.match_pattern(p, v, env) {
+            Ok(())
+        } else {
+            Err(rt(format!("el valor {} no coincide con el patrón", display(v, false)), span))
         }
     }
 
@@ -405,18 +294,40 @@ impl<'p, 'o> Interpreter<'p, 'o> {
         match e {
             Expr::Num { value, .. } => Ok(Value::Num(*value)),
             Expr::Str { value, .. } => Ok(vstr(value.clone())),
+            Expr::Template { parts, .. } => {
+                let mut out = String::new();
+                for part in parts {
+                    match part {
+                        StrPart::Text(t) => out.push_str(t),
+                        StrPart::Expr(e) => out.push_str(&display(&self.eval(e, env)?, true)),
+                    }
+                }
+                Ok(vstr(out))
+            }
             Expr::Bool { value, .. } => Ok(Value::Bool(*value)),
             Expr::Ident { name, span } => env.get(name, *span),
-            Expr::Path { ns, name, span } => match stdlib::lookup(ns, name) {
-                Some(m) => Ok(member_value(m)),
-                None => Err(rt(format!("`{}::{}` no existe", ns, name), *span)),
-            },
+            Expr::Path { ns, name, span } => {
+                if let Some(Value::Namespace(ns_env)) = env.lookup(&ns_key(ns)) {
+                    return ns_env.own(name).ok_or_else(|| rt(format!("`{}::{}` no existe", ns, name), *span));
+                }
+                match stdlib::lookup(ns, name) {
+                    Some(m) => Ok(member_value(m)),
+                    None => Err(rt(format!("`{}::{}` no existe", ns, name), *span)),
+                }
+            }
             Expr::Array { items, .. } => {
                 let mut out = Vec::with_capacity(items.len());
                 for i in items {
                     out.push(self.eval(i, env)?);
                 }
                 Ok(varr(out))
+            }
+            Expr::Tuple { items, .. } => {
+                let mut out = Vec::with_capacity(items.len());
+                for i in items {
+                    out.push(self.eval(i, env)?);
+                }
+                Ok(vtuple(out))
             }
             Expr::Object { fields, .. } => {
                 let mut out: Vec<(String, Value<'p>)> = Vec::with_capacity(fields.len());
@@ -455,6 +366,11 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 let obj = self.eval(object, env)?;
                 match &obj {
                     Value::Object(fields) => Ok(obj_field(&fields.borrow(), name).unwrap_or(Value::Unit)),
+                    Value::Tuple(items) => name
+                        .parse::<usize>()
+                        .ok()
+                        .and_then(|i| items.borrow().get(i).cloned())
+                        .ok_or_else(|| rt(format!("la tupla no tiene el elemento `{}`", name), *span)),
                     _ => Err(rt(format!("el valor no tiene el campo `{}`", name), *span)),
                 }
             }
@@ -511,11 +427,11 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                 }
                 Ok(Value::Unit)
             }
-            Expr::For { name, iter, body, .. } => {
+            Expr::For { pattern, iter, body, .. } => {
                 let it = self.eval(iter, env)?;
                 let run = |this: &mut Self, v: Value<'p>| -> Result<bool, Control<'p>> {
                     let inner = Env::new(Some(Rc::clone(env)));
-                    inner.define(name, v);
+                    this.bind(pattern, &v, &inner, pattern.span())?;
                     this.loop_body(body, &inner)
                 };
                 match &it {
@@ -608,10 +524,25 @@ impl<'p, 'o> Interpreter<'p, 'o> {
     fn assign(&mut self, target: &'p Expr, value: Value<'p>, env: &Rc<Env<'p>>) -> Result<(), Control<'p>> {
         match target {
             Expr::Ident { name, span } => env.set(name, value, *span),
-            Expr::Member { object, name, .. } => {
+            Expr::Path { ns, name, span } => match env.lookup(&ns_key(ns)) {
+                Some(Value::Namespace(ns_env)) => {
+                    ns_env.define(name, value);
+                    Ok(())
+                }
+                _ => Err(rt(format!("no se puede asignar a `{}::{}`", ns, name), *span)),
+            },
+            Expr::Member { object, name, span } => {
                 let obj = self.eval(object, env)?;
-                if let Value::Object(fields) = &obj {
-                    obj_set(&mut fields.borrow_mut(), name, value);
+                match &obj {
+                    Value::Object(fields) => obj_set(&mut fields.borrow_mut(), name, value),
+                    Value::Tuple(items) => {
+                        let i = name.parse::<usize>().ok().filter(|i| *i < items.borrow().len());
+                        let Some(i) = i else {
+                            return Err(rt(format!("la tupla no tiene el elemento `{}`", name), *span));
+                        };
+                        items.borrow_mut()[i] = value;
+                    }
+                    _ => {}
                 }
                 Ok(())
             }
@@ -724,220 +655,6 @@ impl<'p, 'o> Interpreter<'p, 'o> {
         self.call_value(&f, arg_vals, span)
     }
 
-    fn call_method(&mut self, recv: &Value<'p>, name: &str, args: Vec<Value<'p>>, span: Span) -> EResult<'p> {
-        match recv {
-            Value::Array(items) => match name {
-                "len" => Ok(Value::Num(items.borrow().len() as f64)),
-                "push" => {
-                    items.borrow_mut().push(args.into_iter().next().unwrap_or(Value::Unit));
-                    Ok(Value::Unit)
-                }
-                "pop" => {
-                    let v = items.borrow_mut().pop();
-                    v.ok_or_else(|| rt("`pop()` en un arreglo vacío", span))
-                }
-                "contains" => {
-                    let target = args.first().cloned().unwrap_or(Value::Unit);
-                    Ok(Value::Bool(items.borrow().iter().any(|x| deep_equal(x, &target))))
-                }
-                "reverse" => {
-                    let mut out = items.borrow().clone();
-                    out.reverse();
-                    Ok(varr(out))
-                }
-                "join" => {
-                    let sep = match args.first() {
-                        Some(Value::Str(s)) => s.to_string(),
-                        _ => String::new(),
-                    };
-                    let parts: Vec<String> = items.borrow().iter().map(|x| display(x, true)).collect();
-                    Ok(vstr(parts.join(&sep)))
-                }
-                "map" => {
-                    let f = args.into_iter().next().unwrap_or(Value::Unit);
-                    let snapshot: Vec<Value<'p>> = items.borrow().clone();
-                    let mut out = Vec::with_capacity(snapshot.len());
-                    for x in snapshot {
-                        out.push(self.call_value(&f, vec![x], span)?);
-                    }
-                    Ok(varr(out))
-                }
-                "filter" => {
-                    let f = args.into_iter().next().unwrap_or(Value::Unit);
-                    let snapshot: Vec<Value<'p>> = items.borrow().clone();
-                    let mut out = Vec::new();
-                    for x in snapshot {
-                        let keep = self.call_value(&f, vec![x.clone()], span)?;
-                        if matches!(keep, Value::Bool(true)) {
-                            out.push(x);
-                        }
-                    }
-                    Ok(varr(out))
-                }
-                "any" | "all" => {
-                    let f = args.into_iter().next().unwrap_or(Value::Unit);
-                    let snapshot: Vec<Value<'p>> = items.borrow().clone();
-                    let mut result = name == "all";
-                    for x in snapshot {
-                        let v = self.call_value(&f, vec![x], span)?;
-                        let hit = matches!(v, Value::Bool(true));
-                        if name == "any" && hit {
-                            result = true;
-                            break;
-                        }
-                        if name == "all" && !hit {
-                            result = false;
-                            break;
-                        }
-                    }
-                    Ok(Value::Bool(result))
-                }
-                "fold" => {
-                    let mut it = args.into_iter();
-                    let mut acc = it.next().unwrap_or(Value::Unit);
-                    let f = it.next().unwrap_or(Value::Unit);
-                    let snapshot: Vec<Value<'p>> = items.borrow().clone();
-                    for x in snapshot {
-                        acc = self.call_value(&f, vec![acc, x], span)?;
-                    }
-                    Ok(acc)
-                }
-                "sum" => {
-                    let mut total = 0.0;
-                    for x in items.borrow().iter() {
-                        total += self.num(x, span)?;
-                    }
-                    Ok(Value::Num(total))
-                }
-                "sort" => {
-                    let mut out = items.borrow().clone();
-                    out.sort_by(|a, b| match (a, b) {
-                        (Value::Num(x), Value::Num(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
-                        (Value::Str(x), Value::Str(y)) => x.cmp(y),
-                        _ => std::cmp::Ordering::Equal,
-                    });
-                    Ok(varr(out))
-                }
-                "slice" => {
-                    let items = items.borrow();
-                    let (a, b) = slice_bounds(&args, items.len());
-                    Ok(varr(items[a..b].to_vec()))
-                }
-                "index_of" => {
-                    let target = args.first().cloned().unwrap_or(Value::Unit);
-                    let pos = items.borrow().iter().position(|x| deep_equal(x, &target));
-                    Ok(Value::Num(pos.map_or(-1.0, |p| p as f64)))
-                }
-                "is_empty" => Ok(Value::Bool(items.borrow().is_empty())),
-                _ => Err(rt(format!("método desconocido `{}`", name), span)),
-            },
-            Value::Str(s) => {
-                let arg_str = || -> String {
-                    match args.first() {
-                        Some(Value::Str(a)) => a.to_string(),
-                        _ => String::new(),
-                    }
-                };
-                match name {
-                    "len" => Ok(Value::Num(s.chars().count() as f64)),
-                    "upper" => Ok(vstr(s.to_uppercase())),
-                    "lower" => Ok(vstr(s.to_lowercase())),
-                    "trim" => Ok(vstr(s.trim().to_string())),
-                    "contains" => Ok(Value::Bool(s.contains(&arg_str()))),
-                    "starts_with" => Ok(Value::Bool(s.starts_with(&arg_str()))),
-                    "ends_with" => Ok(Value::Bool(s.ends_with(&arg_str()))),
-                    "split" => {
-                        let sep = arg_str();
-                        let parts: Vec<Value<'p>> = if sep.is_empty() {
-                            s.chars().map(|c| vstr(c.to_string())).collect()
-                        } else {
-                            s.split(&sep).map(vstr).collect()
-                        };
-                        Ok(varr(parts))
-                    }
-                    "chars" => Ok(varr(s.chars().map(|c| vstr(c.to_string())).collect())),
-                    "repeat" => {
-                        let n = match args.first() {
-                            Some(Value::Num(n)) => (*n).max(0.0) as usize,
-                            _ => 0,
-                        };
-                        Ok(vstr(s.repeat(n)))
-                    }
-                    "lines" => Ok(varr(s.lines().map(vstr).collect())),
-                    "replace" => {
-                        let to = match args.get(1) {
-                            Some(Value::Str(a)) => a.to_string(),
-                            _ => String::new(),
-                        };
-                        let from = arg_str();
-                        Ok(vstr(if from.is_empty() { s.to_string() } else { s.replace(&from, &to) }))
-                    }
-                    "slice" => {
-                        let chars: Vec<char> = s.chars().collect();
-                        let (a, b) = slice_bounds(&args, chars.len());
-                        Ok(vstr(chars[a..b].iter().collect::<String>()))
-                    }
-                    "index_of" => {
-                        // posición en caracteres, no en bytes
-                        let pos = s.find(&arg_str()).map(|byte| s[..byte].chars().count());
-                        Ok(Value::Num(pos.map_or(-1.0, |p| p as f64)))
-                    }
-                    "is_empty" => Ok(Value::Bool(s.is_empty())),
-                    "to_number" => {
-                        let parsed = s.trim().parse::<f64>().ok().filter(|n| n.is_finite());
-                        Ok(match parsed {
-                            Some(n) => vobj(vec![("ok", Value::Bool(true)), ("valor", Value::Num(n))]),
-                            None => vobj(vec![("ok", Value::Bool(false))]),
-                        })
-                    }
-                    _ => Err(rt(format!("método desconocido `{}`", name), span)),
-                }
-            }
-            Value::Num(n) => {
-                let arg_num = || -> f64 {
-                    match args.first() {
-                        Some(Value::Num(a)) => *a,
-                        _ => 0.0,
-                    }
-                };
-                match name {
-                    "to_string" => Ok(vstr(fmt_num(*n))),
-                    "abs" => Ok(Value::Num(n.abs())),
-                    "floor" => Ok(Value::Num(n.floor())),
-                    "ceil" => Ok(Value::Num(n.ceil())),
-                    // Math.round de JS: redondea hacia +infinito en los .5
-                    "round" => Ok(Value::Num((n + 0.5).floor())),
-                    "sqrt" => Ok(Value::Num(n.sqrt())),
-                    "pow" => Ok(Value::Num(n.powf(arg_num()))),
-                    "min" => Ok(Value::Num(n.min(arg_num()))),
-                    "max" => Ok(Value::Num(n.max(arg_num()))),
-                    "to_base" => {
-                        let base = arg_num();
-                        if !(2.0..=36.0).contains(&base) || base.fract() != 0.0 {
-                            return Err(rt(
-                                format!("base inválida {}: tiene que ser un entero entre 2 y 36", fmt_num(base)),
-                                span,
-                            ));
-                        }
-                        Ok(vstr(to_base(n.trunc() as i64, base as u32)))
-                    }
-                    _ => Err(rt(format!("método desconocido `{}`", name), span)),
-                }
-            }
-            Value::Bool(b) if name == "to_string" => Ok(vstr(b.to_string())),
-            Value::Range(start, end) if name == "to_array" => {
-                let mut out = Vec::new();
-                let mut i = *start;
-                while i < *end {
-                    out.push(Value::Num(i));
-                    i += 1.0;
-                }
-                Ok(varr(out))
-            }
-            _ => Err(rt(format!("método desconocido `{}`", name), span)),
-        }
-    }
-
     // ---------- patrones ----------
 
     fn match_pattern(&self, p: &Pattern, v: &Value<'p>, env: &Rc<Env<'p>>) -> bool {
@@ -968,6 +685,11 @@ impl<'p, 'o> Interpreter<'p, 'o> {
                     field.is_some_and(|fv| self.match_pattern(fp, &fv, env))
                 })
             }
+            Pattern::Tuple { items, .. } => {
+                let Value::Tuple(vs) = v else { return false };
+                let vs = vs.borrow().clone();
+                vs.len() == items.len() && items.iter().zip(&vs).all(|(ip, iv)| self.match_pattern(ip, iv, env))
+            }
         }
     }
 
@@ -988,6 +710,13 @@ impl<'p, 'o> Interpreter<'p, 'o> {
             Type::Range => matches!(v, Value::Range(_, _)),
             Type::Array(elem) => match v {
                 Value::Array(items) => items.borrow().iter().all(|x| self.value_is(x, elem)),
+                _ => false,
+            },
+            Type::Tuple(ts) => match v {
+                Value::Tuple(vs) => {
+                    let vs = vs.borrow();
+                    vs.len() == ts.len() && vs.iter().zip(ts).all(|(x, t)| self.value_is(x, t))
+                }
                 _ => false,
             },
             Type::Object(fields) => match v {

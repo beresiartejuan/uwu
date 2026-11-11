@@ -1,4 +1,4 @@
-use crate::lexer::Span;
+use crate::syntax::Span;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Severity {

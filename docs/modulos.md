@@ -41,11 +41,13 @@ print(cuadrado(2));              // error: no existe `cuadrado` en este ámbito
 | `export type ...` | exporta un tipo |
 | `export module nombre;` | declara el nombre del módulo |
 | `export import ...;` | re-exporta: quien te importe también recibe eso |
-| `using namespace fs;` | trae todos los miembros de una biblioteca al ámbito |
+| `namespace geo { ... }` | agrupa declaraciones bajo `geo::` (ver [namespaces](#namespaces)) |
+| `export namespace geo { ... }` | exporta el namespace con todo lo que tiene |
+| `using namespace fs;` | trae todos los miembros de una biblioteca o namespace al ámbito |
 | `using fs::leer;` | trae un solo miembro |
 
-`import` y `export` sólo pueden ir en el nivel superior del archivo, no dentro
-de funciones ni bloques. `export module` tiene que ser la primera línea.
+`import`, `export` y `namespace` sólo pueden ir en el nivel superior del
+archivo, no dentro de funciones ni bloques. `export module` tiene que ser la primera línea.
 
 ## Qué se importa
 
@@ -65,6 +67,48 @@ using namespace math;      // ahora `PI`, `sin`, ... sin prefijo
 using path::extension;     // sólo `extension`
 print(PI, extension("foto.png"));
 ```
+
+## Namespaces
+
+Un `namespace` agrupa funciones, constantes y tipos bajo un prefijo, como en
+C++. Afuera se usan con `::`, igual que la biblioteca estándar; adentro, sin
+prefijo.
+
+```rust
+// formas.uwu
+export namespace circulo {
+    type Circulo = { radio: number };
+    let PI = 3.14159;
+    fn area(c: Circulo): number { PI * c.radio * c.radio }
+}
+
+export namespace cuadrado {
+    type Cuadrado = { lado: number };
+    fn area(c: Cuadrado): number { c.lado * c.lado }    // no choca con circulo::area
+}
+```
+
+```rust
+// main.uwu
+import "formas.uwu";
+
+let c: circulo::Circulo = { radio: 2 };
+print(circulo::area(c), cuadrado::area({ lado: 3 }));
+
+using namespace cuadrado;     // ahora `area` y `Cuadrado` sin prefijo
+let q: Cuadrado = { lado: 4 };
+print(area(q));
+```
+
+- `export namespace` exporta todo lo que hay adentro. Un `namespace` sin
+  `export` sólo se ve en su archivo, y adentro no se usa `export`.
+- Adentro sólo puede haber `fn`, `let`, `type` y `using`: el código suelto va
+  afuera. Los namespaces no se anidan.
+- Un `let mut` del namespace se puede modificar desde el mismo archivo
+  (`circulo::contador += 1`), pero no desde otro módulo, igual que todo lo importado.
+- Como pasa con las variables, un `let` del namespace no se puede usar antes
+  de su declaración. Las funciones y los tipos sí.
+- Un namespace no puede llamarse igual que una biblioteca estándar importada.
 
 ## Cómo se buscan los archivos
 

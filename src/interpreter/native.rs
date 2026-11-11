@@ -3,9 +3,9 @@
 //! Lo que expone `std` se usa directamente; lo que no (señales, uid, hora
 //! local) se pide a la libc, que en Linux ya está enlazada con todo binario.
 
-use crate::interpreter::{display, rt, varr, vobj, vstr, Control, EResult, Interpreter, Value};
-use crate::lexer::Span;
+use super::{display, rt, varr, vobj, vstr, Control, EResult, Interpreter, Value};
 use crate::stdlib::BuiltinFn;
+use crate::syntax::Span;
 use std::io::{IsTerminal, Read, Write};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::process::ExitStatusExt;

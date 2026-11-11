@@ -20,6 +20,12 @@ impl Span {
 pub enum TokenKind {
     Num,
     Str,
+    /// `"hola {` — texto antes de la primera interpolación.
+    StrHead,
+    /// `} y {` — texto entre dos interpolaciones.
+    StrMid,
+    /// `} chau"` — texto después de la última interpolación.
+    StrTail,
     Ident,
     Kw,
     Op,
@@ -34,8 +40,25 @@ pub struct Token {
 }
 
 pub const KEYWORDS: &[&str] = &[
-    "let", "mut", "fn", "return", "if", "else", "while", "loop", "for", "in", "match", "type", "true", "false",
-    "break", "continue", "import", "export",
+    "let",
+    "mut",
+    "fn",
+    "return",
+    "if",
+    "else",
+    "while",
+    "loop",
+    "for",
+    "in",
+    "match",
+    "type",
+    "true",
+    "false",
+    "break",
+    "continue",
+    "import",
+    "export",
+    "namespace",
 ];
 
 // Ordenados de más largo a más corto para que `==` gane sobre `=`.
@@ -88,14 +111,89 @@ impl Lexer {
     fn span(&self, start: usize, line: usize, col: usize) -> Span {
         Span { start, end: self.i, line, col, file: self.file }
     }
+
+    /// Lee el texto de un string hasta `"` (devuelve `true`) o hasta el `{` de
+    /// una interpolación (devuelve `false`). `{{` y `}}` son llaves literales.
+    fn read_str(&mut self, start: usize, line: usize, col: usize) -> Result<(String, bool), UwuError> {
+        let mut value = String::new();
+        loop {
+            if self.i >= self.src.len() || self.src[self.i] == '\n' {
+                return Err(UwuError::new(
+                    "string sin cerrar",
+                    self.span(start, line, col),
+                    Some("agregá `\"` al final del texto".into()),
+                ));
+            }
+            let c = self.src[self.i];
+            match c {
+                '"' => {
+                    self.advance(1);
+                    return Ok((value, true));
+                }
+                '{' | '}' if self.src.get(self.i + 1) == Some(&c) => {
+                    value.push(c);
+                    self.advance(2);
+                }
+                '{' => {
+                    self.advance(1);
+                    return Ok((value, false));
+                }
+                '\\' => {
+                    let n = self.src.get(self.i + 1).copied();
+                    match n.and_then(escape) {
+                        Some(e) => {
+                            value.push(e);
+                            self.advance(2);
+                        }
+                        None => {
+                            let shown = n.map(String::from).unwrap_or_default();
+                            return Err(UwuError::new(
+                                format!("secuencia de escape desconocida `\\{}`", shown),
+                                Span {
+                                    start: self.i,
+                                    end: self.i + 2,
+                                    line: self.line,
+                                    col: self.col,
+                                    file: self.file,
+                                },
+                                Some(
+                                    "las secuencias válidas son \\n \\t \\r \\\" \\\\ \\0, y `{{` `}}` para las llaves"
+                                        .into(),
+                                ),
+                            ));
+                        }
+                    }
+                }
+                c => {
+                    value.push(c);
+                    self.advance(1);
+                }
+            }
+        }
+    }
+}
+
+fn unclosed_interpolation(open: Span) -> UwuError {
+    UwuError::new(
+        "falta `}` para cerrar la interpolación",
+        open,
+        Some("para escribir una llave literal en un string usá `{{`".into()),
+    )
 }
 
 pub fn tokenize(src: &str, file: usize) -> Result<Vec<Token>, UwuError> {
     let mut lx = Lexer { src: src.chars().collect(), i: 0, line: 1, col: 1, file };
     let mut tokens: Vec<Token> = Vec::new();
+    // Una entrada por cada interpolación abierta: (llaves abiertas adentro, posición del `{`).
+    let mut interp: Vec<(usize, Span)> = Vec::new();
 
     while lx.i < lx.src.len() {
         let ch = lx.src[lx.i];
+        if ch == '\n' {
+            if let Some((_, open)) = interp.last() {
+                return Err(unclosed_interpolation(*open));
+            }
+        }
         if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
             lx.advance(1);
             continue;
@@ -176,48 +274,43 @@ pub fn tokenize(src: &str, file: usize) -> Result<Vec<Token>, UwuError> {
             continue;
         }
 
-        if ch == '"' {
-            lx.advance(1);
-            let mut value = String::new();
-            loop {
-                if lx.i >= lx.src.len() || lx.src[lx.i] == '\n' {
-                    return Err(UwuError::new(
-                        "string sin cerrar",
-                        lx.span(start, s_line, s_col),
-                        Some("agregá `\"` al final del texto".into()),
-                    ));
-                }
-                let c = lx.src[lx.i];
-                if c == '"' {
-                    lx.advance(1);
-                    break;
-                }
-                if c == '\\' {
-                    let n = lx.src.get(lx.i + 1).copied();
-                    match n.and_then(escape) {
-                        Some(e) => {
-                            value.push(e);
-                            lx.advance(2);
-                        }
-                        None => {
-                            let shown = n.map(String::from).unwrap_or_default();
-                            return Err(UwuError::new(
-                                format!("secuencia de escape desconocida `\\{}`", shown),
-                                Span { start: lx.i, end: lx.i + 2, line: lx.line, col: lx.col, file },
-                                Some("las secuencias válidas son \\n \\t \\r \\\" \\\\ \\0".into()),
-                            ));
-                        }
-                    }
-                    continue;
-                }
-                value.push(c);
-                lx.advance(1);
+        // `"texto"`, o `}texto"` / `}texto{` cuando termina una interpolación
+        let closes_interp = ch == '}' && interp.last().is_some_and(|(depth, _)| *depth == 0);
+        if ch == '"' || closes_interp {
+            if closes_interp {
+                interp.pop();
             }
-            tokens.push(Token { kind: TokenKind::Str, value, span: lx.span(start, s_line, s_col) });
+            lx.advance(1);
+            let (value, closed) = match lx.read_str(start, s_line, s_col) {
+                // `"hola {nombre"`: el `"` final abrió otro string adentro de la interpolación
+                Err(_) if ch == '"' && !interp.is_empty() => {
+                    return Err(unclosed_interpolation(interp.last().unwrap().1))
+                }
+                r => r?,
+            };
+            let kind = match (ch == '"', closed) {
+                (true, true) => TokenKind::Str,
+                (true, false) => TokenKind::StrHead,
+                (false, false) => TokenKind::StrMid,
+                (false, true) => TokenKind::StrTail,
+            };
+            let span = lx.span(start, s_line, s_col);
+            if !closed {
+                let open = Span { start: lx.i - 1, end: lx.i, line: lx.line, col: lx.col - 1, file };
+                interp.push((0, open));
+            }
+            tokens.push(Token { kind, value, span });
             continue;
         }
 
         if let Some(op) = OPERATORS.iter().find(|o| lx.starts_with(o, lx.i)) {
+            if let Some((depth, _)) = interp.last_mut() {
+                match *op {
+                    "{" => *depth += 1,
+                    "}" => *depth -= 1,
+                    _ => {}
+                }
+            }
             lx.advance(op.chars().count());
             tokens.push(Token { kind: TokenKind::Op, value: op.to_string(), span: lx.span(start, s_line, s_col) });
             continue;
@@ -228,6 +321,9 @@ pub fn tokenize(src: &str, file: usize) -> Result<Vec<Token>, UwuError> {
             Span { start, end: start + 1, line: lx.line, col: lx.col, file },
             None,
         ));
+    }
+    if let Some((_, open)) = interp.last() {
+        return Err(unclosed_interpolation(*open));
     }
 
     tokens.push(Token {

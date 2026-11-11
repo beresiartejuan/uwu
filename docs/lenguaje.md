@@ -6,6 +6,9 @@ biblioteca estándar [stdlib.md](stdlib.md).
 - [Programas](#programas)
 - [Variables](#variables)
 - [Tipos](#tipos)
+- [Strings e interpolación](#strings-e-interpolación)
+- [Tuplas](#tuplas)
+- [Desestructuración](#desestructuración)
 - [Expresiones y operadores](#expresiones-y-operadores)
 - [Control de flujo](#control-de-flujo)
 - [Funciones y closures](#funciones-y-closures)
@@ -48,12 +51,13 @@ de sus campos (`o.a = 1`) o métodos que la cambian (`v.push(1)`).
 | Tipo | Ejemplos |
 |---|---|
 | `number` | `42`, `3.14`, `1_000`, `0xff`, `0o755`, `0b1010` |
-| `string` | `"hola"`, con escapes `\n` `\t` `\r` `\"` `\\` `\0` |
+| `string` | `"hola"`, `"hola {nombre}"` (ver [interpolación](#strings-e-interpolación)) |
 | `boolean` | `true`, `false` |
 | `void` | lo que devuelve una función sin valor |
 | `never` | lo que nunca termina: `panic(...)`, `return`, `loop` sin `break` |
 | literales | `"norte"`, `1`, `true` |
 | arreglos | `number[]`, `(string \| number)[]` |
+| tuplas | `(number, string)`, `(boolean,)` |
 | objetos | `{ x: number, y: number }` |
 | uniones | `"norte" \| "sur"`, `string \| number` |
 | funciones | `(x: number) => string` |
@@ -80,6 +84,70 @@ vacío necesita anotación: `let v: number[] = [];`.
 
 **Sin conversiones implícitas**: `if 1 { }` es un error. Sí se puede concatenar
 un `string` con un `number` o un `boolean` usando `+`.
+
+## Strings e interpolación
+
+Lo que va entre llaves dentro de un string se evalúa y se inserta en el texto:
+
+```rust
+let nombre = "Ana";
+let xs = [1, 2, 3];
+print("hola {nombre}, tenés {xs.len()} números: {xs}");   // hola Ana, tenés 3 números: [1, 2, 3]
+print("el doble: {xs.map(|x| x * 2)}, {"anidado {nombre.upper()}"}");
+print("llaves literales: {{ y }}");                        // llaves literales: { y }
+```
+
+- Entre las llaves va cualquier expresión, incluso otros strings.
+- Se puede interpolar cualquier valor salvo `void` y las funciones (si te
+  olvidaste los `()`, el compilador te avisa). Los strings se insertan tal cual
+  y el resto se muestra igual que con `print`.
+- `{{` y `}}` escriben una llave literal.
+- Los escapes son `\n` `\t` `\r` `\"` `\\` `\0`. Un string no puede ocupar
+  varias líneas.
+
+## Tuplas
+
+Como en Rust: un grupo de valores de tipos distintos, de largo fijo.
+
+```rust
+fn dividir(a: number, b: number): (number, number) {
+    ((a / b).floor(), a % b)
+}
+
+let t = dividir(17, 5);
+print(t, t.0, t.1);           // (3, 2) 3 2
+
+let mut par: (string, number) = ("edad", 30);
+par.1 += 1;
+let anidada = ((1, 2), "x");
+print(anidada.0.1);           // 2
+let uno = (5,);               // con un solo elemento lleva coma
+```
+
+- Los elementos se leen con `.0`, `.1`, ... Un índice que no existe es un error
+  de compilación.
+- `(number, string)` sólo acepta tuplas de exactamente ese largo y esos tipos.
+- Igual que los arreglos y los objetos, se comparan por estructura con `==` y se
+  comparten por referencia.
+
+## Desestructuración
+
+`let` y `for` aceptan patrones de tuplas y de objetos:
+
+```rust
+let (cociente, resto) = (3, 2);
+let ((a, b), c) = ((1, 2), "tres");
+let { x, y: alto } = { x: 10, y: 20 };   // `alto` vale 20
+let (mut total, _) = (0, "ignorado");    // `mut` en cada variable, `_` descarta
+total += 1;
+
+for (i, letra) in ["a", "b"].enumerate() {
+    print(i, letra);
+}
+```
+
+El patrón tiene que coincidir **siempre**: `let (0, x) = t;` es un error,
+porque `t.0` podría no ser `0`. Para eso está `match`.
 
 ## Expresiones y operadores
 
@@ -122,6 +190,7 @@ loop {
 for i in 0..10 { }          // rango, sin incluir el 10
 for x in [1, 2, 3] { }      // arreglo
 for c in "hola" { }         // caracteres de un string
+for (i, x) in xs.enumerate() { }   // con desestructuración
 ```
 
 `return` sale de la función actual. `break` y `continue` fuera de un bucle son
@@ -172,6 +241,7 @@ match valor {
     n: number if n < 0 => "negativo",    // filtro por tipo + guarda
     { tipo: "circulo", radio } => ...,   // objeto: liga `radio`
     { tipo: "punto", x: 0 } => ...,      // patrones anidados
+    (0, y) => ...,                       // tupla
     _ => "otro",                         // comodín
 }
 ```
@@ -191,7 +261,7 @@ primero hay que distinguirlas con `match`.
 
 | Tipo | Métodos |
 |---|---|
-| `T[]` | `len()` `is_empty()` `push(x)` `pop()` `contains(x)` `index_of(x)` `reverse()` `slice(a, b)` `sort()` `join(sep)` `map(f)` `filter(f)` `any(f)` `all(f)` `fold(inicial, f)` `sum()` |
+| `T[]` | `len()` `is_empty()` `push(x)` `pop()` `contains(x)` `index_of(x)` `reverse()` `slice(a, b)` `sort()` `join(sep)` `map(f)` `filter(f)` `any(f)` `all(f)` `fold(inicial, f)` `sum()` `enumerate()` `zip(otro)` |
 | `string` | `len()` `is_empty()` `upper()` `lower()` `trim()` `contains(s)` `starts_with(s)` `ends_with(s)` `index_of(s)` `split(sep)` `lines()` `chars()` `slice(a, b)` `replace(de, a)` `repeat(n)` `to_number()` |
 | `number` | `to_string()` `to_base(b)` `abs()` `floor()` `ceil()` `round()` `sqrt()` `pow(n)` `min(n)` `max(n)` |
 | `boolean` | `to_string()` |
@@ -206,6 +276,8 @@ Detalles:
 - `len`, `index_of` y `slice` en strings cuentan caracteres, no bytes.
 - `"42".to_number()` devuelve `{ ok: true, valor: number } | { ok: false }`.
 - `255.to_base(16)` → `"ff"`; la base va de 2 a 36.
+- `enumerate()` devuelve `(number, T)[]` con cada elemento y su índice, y
+  `a.zip(b)` devuelve `(A, B)[]` con los pares, tan largo como el más corto.
 
 ## Errores
 

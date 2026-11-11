@@ -1,5 +1,48 @@
 # Changelog
 
+## Sin publicar
+
+### Lenguaje
+
+- **Tuplas** al estilo Rust: `(1, "a")`, con tipo `(number, string)`, acceso
+  `t.0` y comparación estructural. Una tupla de un elemento se escribe `(x,)`.
+- **Desestructuración** en `let` y `for`, de tuplas y de objetos:
+  `let (a, b) = t;`, `let { x, y: alto } = p;`, `for (i, x) in xs.enumerate()`.
+  El patrón tiene que coincidir siempre, y `mut` se pone en cada variable:
+  `let (mut a, b) = ...`.
+- Patrones de tuplas en `match`, con chequeo de exhaustividad.
+- **Interpolación de strings**: `"hola {nombre}, tenés {xs.len()} mensajes"`.
+  `{{` y `}}` escriben llaves literales.
+- Métodos nuevos de arreglos: `enumerate()` y `zip(otro)`.
+
+> **Cambio incompatible:** las llaves dentro de los strings ahora interpolan.
+> Un string que tenía `{` o `}` literales tiene que escribirlos como `{{` y `}}`.
+> `namespace` pasa a ser palabra reservada.
+
+### Módulos
+
+- **`namespace` y `export namespace`**: agrupan funciones, constantes y tipos
+  bajo un prefijo (`geo::area`, `geo::Punto`), como en C++.
+- `using namespace geo;` y `using geo::area;` también funcionan con ellos.
+- `export let` acepta desestructuración: `export let (A, B) = (1, 2);`.
+
+### REPL (nuevo)
+
+- `uwu` sin argumentos, o `uwu repl`, abre una consola interactiva.
+- Muestra el valor de la última expresión y deja redefinir funciones y tipos.
+- Una entrada con errores no cambia el estado.
+- Comandos `:tipo`, `:limpiar`, `:ayuda` y `:salir`.
+- Lee varias líneas si falta cerrar un `{`, `(` o `[`.
+- La API está en `uwu::repl::Repl`.
+
+### Código
+
+- `src/` está organizado por etapa: `syntax/` (lexer, parser y AST), `checker/`
+  e `interpreter/`, con el checker y el intérprete repartidos en varios archivos.
+- Los tests de integración pasaron de un solo archivo a `tests/uwu/`, uno por tema.
+- Para quien use `uwu` como biblioteca: `uwu::lexer`, `uwu::parser` y `uwu::ast`
+  ahora son `uwu::syntax::lexer`, `uwu::syntax::parser` y `uwu::syntax::ast`.
+
 ## 0.2.0 (2026-11-11)
 
 Reescritura completa en Rust, con módulos y biblioteca estándar.

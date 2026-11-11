@@ -7,7 +7,7 @@
 //!
 //! Este archivo define *qué* existe y con qué tipo; el intérprete lo ejecuta.
 
-use crate::ast::LitVal;
+use crate::syntax::ast::LitVal;
 use crate::types::{arr, lit, t_fn, t_obj, Type, BOOLEAN, NEVER, NUMBER, STRING, VOID};
 
 /// Identifica cada función nativa. El intérprete hace el despacho real.

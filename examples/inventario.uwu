@@ -1,0 +1,44 @@
+// Tuplas, desestructuración, interpolación de strings y namespaces.
+
+namespace inventario {
+    type Item = { nombre: string, precio: number, cantidad: number };
+
+    fn total(item: Item): number { item.precio * item.cantidad }
+
+    // Devuelve dos valores: el más caro y el total general
+    fn resumen(items: Item[]): (string, number) {
+        let mut caro = items[0];
+        for item in items {
+            if total(item) > total(caro) { caro = item; }
+        }
+        (caro.nombre, items.map(|i| total(i)).sum())
+    }
+}
+
+let items: inventario::Item[] = [
+    { nombre: "teclado", precio: 25, cantidad: 4 },
+    { nombre: "monitor", precio: 180, cantidad: 2 },
+    { nombre: "mouse", precio: 12, cantidad: 10 },
+];
+
+for (i, { nombre, cantidad }) in items.enumerate() {
+    print("{i + 1}. {nombre} x{cantidad}");
+}
+
+let (mas_caro, total) = inventario::resumen(items);
+print("lo que más suma: {mas_caro}");
+print("total: ${total}");
+
+// `match` también funciona con tuplas
+fn ubicar(p: (number, number)): string {
+    match p {
+        (0, 0) => "el origen",
+        (0, y) => "el eje y, a {y} del origen",
+        (x, 0) => "el eje x, a {x} del origen",
+        (x, y) => "el punto ({x}, {y})",
+    }
+}
+
+for p in [(0, 0), (0, 3), (2, 0), (1, 1)] {
+    print("{p} está en {ubicar(p)}");
+}
